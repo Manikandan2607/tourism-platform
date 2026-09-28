@@ -50,8 +50,8 @@ const footerLinks = [
    Gmail address and contact number.
    ========================================================= */
 
-const CONTACT_EMAIL = "yourgmail@gmail.com";
-const CONTACT_PHONE = "+91 98765 43210";
+const CONTACT_EMAIL = "manikandan.m20060726@gmail.com";
+const CONTACT_PHONE = "+91 7708985232";
 
 /* =========================================================
    FOOTER

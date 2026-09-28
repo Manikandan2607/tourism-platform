@@ -40,13 +40,14 @@ const TYPE_ICONS = {
   flight: Plane,
   train: TrainFront,
   bus: BusFront,
-
-  // Lucide does not provide the Taxi icon
-  // in the version being used by this project.
   taxi: Car,
-
   "car-rental": Car,
   "bike-rental": Bike,
+};
+
+const CURRENCY_SYMBOLS = {
+  INR: "₹",
+  USD: "$",
 };
 
 /* =========================================================
@@ -57,7 +58,11 @@ function formatType(type) {
   return TYPE_LABELS[type] || type || "—";
 }
 
-function formatCost(cost) {
+function formatCurrency(currency) {
+  return CURRENCY_SYMBOLS[currency] || currency || "₹";
+}
+
+function formatCost(cost, currency = "INR") {
   if (!cost) {
     return "—";
   }
@@ -72,19 +77,24 @@ function formatCost(cost) {
     return "—";
   }
 
+  const symbol = formatCurrency(currency);
+
+  const formatNumber = (value) =>
+    value.toLocaleString(currency === "INR" ? "en-IN" : "en-US");
+
   if (hasMin && hasMax) {
     if (min === max) {
-      return `₹${min.toLocaleString("en-IN")}`;
+      return `${symbol}${formatNumber(min)}`;
     }
 
-    return `₹${min.toLocaleString("en-IN")} – ₹${max.toLocaleString("en-IN")}`;
+    return `${symbol}${formatNumber(min)} – ${symbol}${formatNumber(max)}`;
   }
 
   if (hasMin) {
-    return `From ₹${min.toLocaleString("en-IN")}`;
+    return `From ${symbol}${formatNumber(min)}`;
   }
 
-  return `Up to ₹${max.toLocaleString("en-IN")}`;
+  return `Up to ${symbol}${formatNumber(max)}`;
 }
 
 function getDestinationName(item) {
@@ -93,13 +103,30 @@ function getDestinationName(item) {
   }
 
   if (typeof item.destination === "object") {
-    return item.destination.name || item.destination.title || "—";
+    return (
+      item.destination.name ||
+      item.destination.title ||
+      item.destination.slug ||
+      "—"
+    );
   }
 
   return String(item.destination);
 }
 
 function getTransportationList(response) {
+  if (Array.isArray(response)) {
+    return response;
+  }
+
+  if (Array.isArray(response?.transportation)) {
+    return response.transportation;
+  }
+
+  if (Array.isArray(response?.transportations)) {
+    return response.transportations;
+  }
+
   if (Array.isArray(response?.data)) {
     return response.data;
   }
@@ -108,12 +135,20 @@ function getTransportationList(response) {
     return response.data.transportation;
   }
 
-  if (Array.isArray(response?.transportation)) {
-    return response.transportation;
+  if (Array.isArray(response?.data?.transportations)) {
+    return response.data.transportations;
   }
 
-  if (Array.isArray(response)) {
-    return response;
+  if (Array.isArray(response?.data?.data)) {
+    return response.data.data;
+  }
+
+  if (Array.isArray(response?.items)) {
+    return response.items;
+  }
+
+  if (Array.isArray(response?.data?.items)) {
+    return response.data.items;
   }
 
   return [];
@@ -143,6 +178,12 @@ export default function TransportationPage() {
       setError("");
 
       const response = await adminApi.get("/api/dashboard/transportation");
+
+      console.log("Transportation API response:", response);
+
+      if (response?.success === false) {
+        throw new Error(response?.message || "Failed to load transportation.");
+      }
 
       const list = getTransportationList(response);
 
@@ -204,9 +245,27 @@ export default function TransportationPage() {
       setActionLoading(true);
       setError("");
 
-      await adminApi.put(`/api/dashboard/transportation/${item._id}`, {
-        isActive: item.isActive === false,
-      });
+      const nextStatus = item.isActive === false;
+
+      /*
+       * PATCH is intentionally used here.
+       * Your transportation API uses PATCH for partial
+       * status updates.
+       */
+      const response = await adminApi.patch(
+        `/api/dashboard/transportation/${item._id}`,
+        {
+          isActive: nextStatus,
+        },
+      );
+
+      console.log("Transportation status response:", response);
+
+      if (response?.success === false) {
+        throw new Error(
+          response?.message || "Failed to update transportation status.",
+        );
+      }
 
       setConfirmAction(null);
 
@@ -237,7 +296,17 @@ export default function TransportationPage() {
       setActionLoading(true);
       setError("");
 
-      await adminApi.delete(`/api/dashboard/transportation/${item._id}`);
+      const response = await adminApi.delete(
+        `/api/dashboard/transportation/${item._id}`,
+      );
+
+      console.log("Transportation delete response:", response);
+
+      if (response?.success === false) {
+        throw new Error(
+          response?.message || "Failed to permanently delete transportation.",
+        );
+      }
 
       setConfirmAction(null);
 
@@ -533,7 +602,6 @@ export default function TransportationPage() {
                           <td className="px-4 py-4">
                             <span className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-50 px-2.5 py-1.5 text-xs font-semibold text-emerald-700">
                               <TypeIcon size={13} />
-
                               {formatType(item.type)}
                             </span>
                           </td>
@@ -565,7 +633,7 @@ export default function TransportationPage() {
                           {/* COST */}
 
                           <td className="px-4 py-4 text-xs font-semibold text-slate-700">
-                            {formatCost(item.estimatedCost)}
+                            {formatCost(item.estimatedCost, item.currency)}
                           </td>
 
                           {/* STATUS */}
@@ -586,8 +654,6 @@ export default function TransportationPage() {
 
                           <td className="px-5 py-4">
                             <div className="flex items-center justify-end gap-1.5">
-                              {/* VIEW */}
-
                               <Link
                                 href={`/admin/dashboard/transportation/${item._id}?view=true`}
                                 className="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-500 transition hover:border-emerald-200 hover:bg-emerald-50 hover:text-emerald-600"
@@ -596,8 +662,6 @@ export default function TransportationPage() {
                                 <Eye size={15} />
                               </Link>
 
-                              {/* EDIT */}
-
                               <Link
                                 href={`/admin/dashboard/transportation/${item._id}`}
                                 className="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-500 transition hover:border-blue-200 hover:bg-blue-50 hover:text-blue-600"
@@ -605,8 +669,6 @@ export default function TransportationPage() {
                               >
                                 <Pencil size={15} />
                               </Link>
-
-                              {/* TOGGLE */}
 
                               <button
                                 type="button"
@@ -625,8 +687,6 @@ export default function TransportationPage() {
                                   <Power size={15} />
                                 )}
                               </button>
-
-                              {/* DELETE */}
 
                               <button
                                 type="button"
@@ -659,8 +719,6 @@ export default function TransportationPage() {
                   return (
                     <div key={item._id} className="p-4">
                       <div className="flex items-start gap-3">
-                        {/* ICON */}
-
                         <div className="flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-emerald-50 text-emerald-600">
                           {item?.coverImage?.url ? (
                             <img
@@ -672,8 +730,6 @@ export default function TransportationPage() {
                             <TypeIcon size={19} />
                           )}
                         </div>
-
-                        {/* CONTENT */}
 
                         <div className="min-w-0 flex-1">
                           <div className="flex items-start justify-between gap-2">
@@ -698,8 +754,6 @@ export default function TransportationPage() {
                             </span>
                           </div>
 
-                          {/* INFO */}
-
                           <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
                             <div className="rounded-lg bg-slate-50 p-2">
                               <p className="text-[10px] font-medium text-slate-400">
@@ -708,7 +762,6 @@ export default function TransportationPage() {
 
                               <p className="mt-0.5 flex items-center gap-1.5 font-semibold text-slate-700">
                                 <TypeIcon size={13} />
-
                                 {formatType(item.type)}
                               </p>
                             </div>
@@ -719,7 +772,7 @@ export default function TransportationPage() {
                               </p>
 
                               <p className="mt-0.5 font-semibold text-slate-700">
-                                {formatCost(item.estimatedCost)}
+                                {formatCost(item.estimatedCost, item.currency)}
                               </p>
                             </div>
 
@@ -744,8 +797,6 @@ export default function TransportationPage() {
                             </div>
                           </div>
 
-                          {/* ROUTE */}
-
                           <div className="mt-2 rounded-lg bg-emerald-50/60 px-3 py-2 text-xs text-slate-600">
                             <span>{item.from || "—"}</span>
 
@@ -753,8 +804,6 @@ export default function TransportationPage() {
 
                             <span>{item.to || "—"}</span>
                           </div>
-
-                          {/* ACTIONS */}
 
                           <div className="mt-3 flex items-center justify-end gap-1.5">
                             <Link
@@ -825,19 +874,13 @@ export default function TransportationPage() {
             }
           }}
         >
-          {/* Backdrop */}
-
           <div className="absolute inset-0 bg-slate-950/60 backdrop-blur-sm" />
-
-          {/* Modal */}
 
           <div
             className="relative z-10 w-full max-w-md overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl"
             onMouseDown={(event) => event.stopPropagation()}
           >
             <div className="p-5 sm:p-6">
-              {/* ICON */}
-
               <div
                 className={`flex h-11 w-11 items-center justify-center rounded-xl ${
                   confirmAction.type === "delete"
@@ -856,8 +899,6 @@ export default function TransportationPage() {
                 )}
               </div>
 
-              {/* TITLE */}
-
               <h3 className="mt-4 text-base font-bold text-slate-900">
                 {confirmAction.type === "delete"
                   ? "Delete transportation?"
@@ -865,8 +906,6 @@ export default function TransportationPage() {
                     ? "Deactivate transportation?"
                     : "Activate transportation?"}
               </h3>
-
-              {/* DESCRIPTION */}
 
               <p className="mt-2 text-sm leading-6 text-slate-500">
                 {confirmAction.type === "delete"
@@ -885,8 +924,6 @@ export default function TransportationPage() {
                       }" will become active again.`}
               </p>
 
-              {/* RECORD SUMMARY */}
-
               <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-3">
                 <p className="text-sm font-semibold text-slate-800">
                   {confirmAction.item?.providerName || "Unnamed Provider"}
@@ -901,8 +938,6 @@ export default function TransportationPage() {
                   {confirmAction.item?.to || "—"}
                 </p>
               </div>
-
-              {/* BUTTONS */}
 
               <div className="mt-5 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
                 <button
@@ -956,8 +991,6 @@ export default function TransportationPage() {
                 </button>
               </div>
             </div>
-
-            {/* CLOSE */}
 
             <button
               type="button"

@@ -22,8 +22,23 @@ const categories = [
   "other",
 ];
 
+const currencies = ["INR", "USD"];
+
+// Unicode letters + spaces only.
+const NAME_REGEX = /^[\p{L}]+(?:[\s]+[\p{L}]+)*$/u;
+
+// Lowercase letters, numbers and hyphens.
+const SLUG_REGEX = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+
+// HTTP / HTTPS image URL.
+const IMAGE_URL_REGEX = /^https?:\/\/[^\s]+$/i;
+
+const MAX_IMAGE_SIZE = 10 * 1024 * 1024;
+
 function normalizeImage(image) {
-  if (!image) return null;
+  if (!image) {
+    return null;
+  }
 
   if (typeof image === "string") {
     return {
@@ -66,6 +81,8 @@ function getInitialValues(initialValues) {
         foreigner: "",
       },
 
+      currency: "INR",
+
       openingTime: "",
       closingTime: "",
       closedOn: "",
@@ -101,6 +118,10 @@ function getInitialValues(initialValues) {
       foreigner: initialValues.entryFee?.foreigner ?? "",
     },
 
+    currency: currencies.includes(initialValues.currency)
+      ? initialValues.currency
+      : "INR",
+
     openingTime: initialValues.openingTime || "",
     closingTime: initialValues.closingTime || "",
     closedOn: initialValues.closedOn || "",
@@ -118,6 +139,48 @@ function getInitialValues(initialValues) {
     isFeatured: initialValues.isFeatured ?? false,
     isActive: initialValues.isActive ?? true,
   };
+}
+
+function sanitizeName(value) {
+  return value
+    .replace(/[^\p{L}\s]/gu, "")
+    .replace(/\s+/g, " ")
+    .replace(/^\s+/, "");
+}
+
+function sanitizeSlug(value) {
+  return value
+    .toLowerCase()
+    .replace(/[^a-z0-9\s-]/g, "")
+    .replace(/\s+/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-+/, "");
+}
+
+function generateSlugFromName(name) {
+  return sanitizeSlug(name.trim());
+}
+
+function normalizeNumberInput(value) {
+  if (value === "") {
+    return "";
+  }
+
+  return value;
+}
+
+async function readJsonResponse(response) {
+  const text = await response.text();
+
+  if (!text) {
+    return null;
+  }
+
+  try {
+    return JSON.parse(text);
+  } catch {
+    return null;
+  }
 }
 
 export default function PlaceForm({
@@ -145,6 +208,7 @@ export default function PlaceForm({
 
   useEffect(() => {
     setFormData(getInitialValues(initialValues));
+    setError("");
   }, [initialValues]);
 
   useEffect(() => {
@@ -157,11 +221,11 @@ export default function PlaceForm({
 
       const response = await adminApi.get("/api/dashboard/destinations");
 
-      setDestinations(response.data || []);
+      setDestinations(response?.data || []);
     } catch (error) {
       console.error("Failed to load destinations:", error);
 
-      setError(error?.message || "Failed to load destinations");
+      setError(error?.message || "Failed to load destinations.");
     } finally {
       setLoadingDestinations(false);
     }
@@ -184,15 +248,46 @@ export default function PlaceForm({
     }));
   }
 
+  function handleNameChange(value) {
+    const sanitized = sanitizeName(value);
+
+    updateField("name", sanitized);
+  }
+
+  function handleSlugChange(value) {
+    const sanitized = sanitizeSlug(value);
+
+    updateField("slug", sanitized);
+  }
+
   function generateSlug() {
-    const slug = formData.name
-      .trim()
-      .toLowerCase()
-      .replace(/[^a-z0-9\s-]/g, "")
-      .replace(/\s+/g, "-")
-      .replace(/-+/g, "-");
+    const slug = generateSlugFromName(formData.name);
 
     updateField("slug", slug);
+  }
+
+  function validateSelectedFile(file) {
+    if (!file) {
+      return "Please select an image.";
+    }
+
+    const allowedTypes = [
+      "image/jpeg",
+      "image/jpg",
+      "image/png",
+      "image/webp",
+      "image/gif",
+    ];
+
+    if (!allowedTypes.includes(file.type)) {
+      return "Only JPG, JPEG, PNG, WEBP, and GIF images are allowed.";
+    }
+
+    if (file.size > MAX_IMAGE_SIZE) {
+      return "Each image must be 10 MB or smaller.";
+    }
+
+    return null;
   }
 
   async function handleGallerySelect(event) {
@@ -203,6 +298,17 @@ export default function PlaceForm({
     }
 
     setError("");
+
+    for (const file of files) {
+      const fileError = validateSelectedFile(file);
+
+      if (fileError) {
+        setError(fileError);
+        event.target.value = "";
+        return;
+      }
+    }
+
     setGalleryUploading(true);
 
     const uploadedImages = [];
@@ -219,7 +325,6 @@ export default function PlaceForm({
         const formDataUpload = new FormData();
 
         formDataUpload.append("file", file);
-
         formDataUpload.append("folder", "tourism/places/gallery");
 
         const response = await fetch("/api/upload", {
@@ -230,7 +335,7 @@ export default function PlaceForm({
           body: formDataUpload,
         });
 
-        const data = await response.json();
+        const data = await readJsonResponse(response);
 
         if (response.status === 401) {
           throw new Error(
@@ -238,17 +343,24 @@ export default function PlaceForm({
           );
         }
 
-        if (!response.ok || !data.success) {
-          throw new Error(data.message || "Gallery image upload failed");
+        if (!response.ok || !data?.success) {
+          throw new Error(data?.message || "Gallery image upload failed.");
         }
 
-        if (!data.image?.url || !data.image?.publicId) {
+        if (!data?.image?.url || !data?.image?.publicId) {
           throw new Error(
             "Uploaded gallery image is missing Cloudinary information.",
           );
         }
 
-        uploadedImages.push(data.image);
+        if (!IMAGE_URL_REGEX.test(data.image.url)) {
+          throw new Error("Uploaded gallery image URL is invalid.");
+        }
+
+        uploadedImages.push({
+          url: data.image.url,
+          publicId: data.image.publicId,
+        });
       }
 
       setFormData((previous) => ({
@@ -258,10 +370,6 @@ export default function PlaceForm({
     } catch (error) {
       console.error("Gallery upload error:", error);
 
-      /*
-       * Clean up images that were successfully uploaded
-       * before a later upload failed.
-       */
       if (uploadedImages.length) {
         await Promise.allSettled(
           uploadedImages
@@ -270,7 +378,7 @@ export default function PlaceForm({
         );
       }
 
-      setError(error?.message || "Gallery image upload failed");
+      setError(error?.message || "Gallery image upload failed.");
     } finally {
       setGalleryUploading(false);
 
@@ -279,6 +387,10 @@ export default function PlaceForm({
   }
 
   async function deleteCloudinaryImage(publicId) {
+    if (!publicId) {
+      return;
+    }
+
     const token =
       typeof window !== "undefined" ? sessionStorage.getItem("token") : null;
 
@@ -297,10 +409,14 @@ export default function PlaceForm({
       }),
     });
 
-    const data = await response.json();
+    const data = await readJsonResponse(response);
 
-    if (!response.ok || !data.success) {
-      throw new Error(data.message || "Failed to delete image");
+    if (response.status === 401) {
+      throw new Error("Your admin session has expired. Please log in again.");
+    }
+
+    if (!response.ok || !data?.success) {
+      throw new Error(data?.message || "Failed to delete image.");
     }
   }
 
@@ -324,44 +440,74 @@ export default function PlaceForm({
     } catch (error) {
       console.error("Gallery delete error:", error);
 
-      setError(error?.message || "Failed to delete gallery image");
+      setError(error?.message || "Failed to delete gallery image.");
     } finally {
       setGalleryRemovingIndex(null);
     }
   }
 
   function validateForm() {
+    const name = formData.name.trim();
+    const slug = formData.slug.trim();
+
     if (!formData.destination) {
       return "Please select a destination.";
     }
 
-    if (!formData.name.trim()) {
+    if (!name) {
       return "Place name is required.";
     }
 
-    if (!formData.slug.trim()) {
+    if (name.length < 2) {
+      return "Place name must be at least 2 characters.";
+    }
+
+    if (name.length > 150) {
+      return "Place name cannot exceed 150 characters.";
+    }
+
+    if (!NAME_REGEX.test(name)) {
+      return "Place name can contain alphabets and spaces only.";
+    }
+
+    if (!slug) {
       return "Slug is required.";
+    }
+
+    if (slug.length > 150) {
+      return "Slug cannot exceed 150 characters.";
+    }
+
+    if (!SLUG_REGEX.test(slug)) {
+      return "Slug can contain lowercase letters, numbers, and hyphens only.";
     }
 
     if (!formData.category) {
       return "Category is required.";
     }
 
+    if (!categories.includes(formData.category)) {
+      return "Please select a valid category.";
+    }
+
     if (!formData.description.trim()) {
       return "Description is required.";
     }
 
-    if (!formData.coverImage?.url) {
-      return "Cover image is required.";
+    if (formData.description.trim().length < 10) {
+      return "Description must be at least 10 characters.";
     }
 
-    /*
-     * New backend requires Cloudinary publicId.
-     * This also prevents an old URL-only image from being
-     * accidentally submitted during an edit.
-     */
-    if (!formData.coverImage?.publicId) {
-      return "Please replace the cover image with a newly uploaded Cloudinary image before saving.";
+    if (formData.description.trim().length > 5000) {
+      return "Description cannot exceed 5000 characters.";
+    }
+
+    if (formData.shortDescription.trim().length > 500) {
+      return "Short description cannot exceed 500 characters.";
+    }
+
+    if (!currencies.includes(formData.currency)) {
+      return "Currency must be INR or USD.";
     }
 
     const numericFields = [
@@ -380,6 +526,30 @@ export default function PlaceForm({
       }
     }
 
+    if (formData.openingTime.length > 50) {
+      return "Opening time cannot exceed 50 characters.";
+    }
+
+    if (formData.closingTime.length > 50) {
+      return "Closing time cannot exceed 50 characters.";
+    }
+
+    if (formData.closedOn.trim().length > 100) {
+      return "Closed on cannot exceed 100 characters.";
+    }
+
+    if (formData.bestTimeToVisit.trim().length > 200) {
+      return "Best time to visit cannot exceed 200 characters.";
+    }
+
+    if (formData.visitDuration.trim().length > 100) {
+      return "Visit duration cannot exceed 100 characters.";
+    }
+
+    if (formData.address.trim().length > 500) {
+      return "Address cannot exceed 500 characters.";
+    }
+
     if (formData.latitude !== "") {
       const latitude = Number(formData.latitude);
 
@@ -394,6 +564,40 @@ export default function PlaceForm({
       if (!Number.isFinite(longitude) || longitude < -180 || longitude > 180) {
         return "Longitude must be between -180 and 180.";
       }
+    }
+
+    if (!formData.coverImage?.url) {
+      return "Cover image is required.";
+    }
+
+    if (!formData.coverImage?.publicId) {
+      return "Cover image must contain valid Cloudinary information. Please upload the cover image again.";
+    }
+
+    if (!IMAGE_URL_REGEX.test(formData.coverImage.url)) {
+      return "Cover image URL is invalid.";
+    }
+
+    if (!Array.isArray(formData.gallery)) {
+      return "Gallery images are invalid.";
+    }
+
+    for (const image of formData.gallery) {
+      if (!image?.url || !image?.publicId) {
+        return "Every gallery image must contain valid Cloudinary information.";
+      }
+
+      if (!IMAGE_URL_REGEX.test(image.url)) {
+        return "One of the gallery image URLs is invalid.";
+      }
+    }
+
+    if (typeof formData.isFeatured !== "boolean") {
+      return "Featured status is invalid.";
+    }
+
+    if (typeof formData.isActive !== "boolean") {
+      return "Active status is invalid.";
     }
 
     return null;
@@ -444,6 +648,8 @@ export default function PlaceForm({
               : undefined,
         },
 
+        currency: formData.currency,
+
         openingTime: formData.openingTime.trim(),
 
         closingTime: formData.closingTime.trim(),
@@ -474,9 +680,9 @@ export default function PlaceForm({
             publicId: image.publicId,
           })),
 
-        isFeatured: formData.isFeatured,
+        isFeatured: Boolean(formData.isFeatured),
 
-        isActive: formData.isActive,
+        isActive: Boolean(formData.isActive),
       };
 
       let response;
@@ -491,7 +697,7 @@ export default function PlaceForm({
       }
 
       if (!response?.success) {
-        throw new Error(response?.message || "Failed to save place");
+        throw new Error(response?.message || "Failed to save place.");
       }
 
       if (typeof onSuccess === "function") {
@@ -501,7 +707,7 @@ export default function PlaceForm({
     } catch (error) {
       console.error("Save place error:", error);
 
-      setError(error?.message || "Failed to save place");
+      setError(error?.message || "Failed to save place.");
     } finally {
       setSubmitting(false);
     }
@@ -569,7 +775,7 @@ export default function PlaceForm({
             label="Place Name"
             required
             value={formData.name}
-            onChange={(value) => updateField("name", value)}
+            onChange={handleNameChange}
             placeholder="Example: Marina Beach"
           />
 
@@ -584,7 +790,7 @@ export default function PlaceForm({
               <input
                 type="text"
                 value={formData.slug}
-                onChange={(event) => updateField("slug", event.target.value)}
+                onChange={(event) => handleSlugChange(event.target.value)}
                 placeholder="marina-beach"
                 className="min-w-0 flex-1 rounded-xl border border-slate-200 px-3.5 py-2.5 text-sm text-slate-800 outline-none transition focus:border-emerald-500 focus:ring-4 focus:ring-emerald-50"
               />
@@ -596,6 +802,7 @@ export default function PlaceForm({
                 title="Generate slug"
               >
                 <Wand2 size={16} />
+
                 <span className="hidden sm:inline">Generate</span>
               </button>
             </div>
@@ -638,6 +845,7 @@ export default function PlaceForm({
               updateField("shortDescription", event.target.value)
             }
             rows={3}
+            maxLength={500}
             placeholder="Short description of the place..."
             className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-sm text-slate-800 outline-none transition focus:border-emerald-500 focus:ring-4 focus:ring-emerald-50"
           />
@@ -654,6 +862,7 @@ export default function PlaceForm({
             value={formData.description}
             onChange={(event) => updateField("description", event.target.value)}
             rows={7}
+            maxLength={5000}
             placeholder="Detailed description of the place..."
             className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-sm text-slate-800 outline-none transition focus:border-emerald-500 focus:ring-4 focus:ring-emerald-50"
           />
@@ -771,23 +980,54 @@ export default function PlaceForm({
           <NumberField
             label="Adult Fee"
             value={formData.entryFee.adult}
-            onChange={(value) => updateEntryFee("adult", value)}
+            onChange={(value) =>
+              updateEntryFee("adult", normalizeNumberInput(value))
+            }
             placeholder="0"
+            min="0"
+            step="0.01"
           />
 
           <NumberField
             label="Child Fee"
             value={formData.entryFee.child}
-            onChange={(value) => updateEntryFee("child", value)}
+            onChange={(value) =>
+              updateEntryFee("child", normalizeNumberInput(value))
+            }
             placeholder="0"
+            min="0"
+            step="0.01"
           />
 
           <NumberField
             label="Foreigner Fee"
             value={formData.entryFee.foreigner}
-            onChange={(value) => updateEntryFee("foreigner", value)}
+            onChange={(value) =>
+              updateEntryFee("foreigner", normalizeNumberInput(value))
+            }
             placeholder="0"
+            min="0"
+            step="0.01"
           />
+        </div>
+
+        {/* Currency */}
+        <div className="mt-5">
+          <label className="mb-2 block text-sm font-medium text-slate-700">
+            Currency
+          </label>
+
+          <select
+            value={formData.currency}
+            onChange={(event) => updateField("currency", event.target.value)}
+            className="w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-sm text-slate-800 outline-none transition focus:border-emerald-500 focus:ring-4 focus:ring-emerald-50 md:max-w-xs"
+          >
+            {currencies.map((currency) => (
+              <option key={currency} value={currency}>
+                {currency}
+              </option>
+            ))}
+          </select>
         </div>
       </div>
 

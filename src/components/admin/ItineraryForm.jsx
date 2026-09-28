@@ -19,6 +19,20 @@ import {
 import { adminApi } from "@/utils/adminApi";
 import { getToken } from "@/utils/api";
 
+const SUPPORTED_CURRENCIES = ["INR", "USD"];
+
+const NAME_REGEX = /^[\p{L}]+(?:[\s]+[\p{L}]+)*$/u;
+const SLUG_REGEX = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+const URL_REGEX = /^https?:\/\/[^\s]+$/i;
+
+const MAX_TITLE_LENGTH = 150;
+const MAX_DESCRIPTION_LENGTH = 5000;
+const MAX_DAY_TITLE_LENGTH = 150;
+const MAX_ACTIVITY_TITLE_LENGTH = 150;
+const MAX_ACTIVITY_DESCRIPTION_LENGTH = 2000;
+const MAX_ACTIVITY_TIME_LENGTH = 50;
+const MAX_GALLERY_IMAGES = 30;
+
 const EMPTY_ACTIVITY = {
   time: "",
   title: "",
@@ -32,19 +46,36 @@ const EMPTY_DAY = {
   activities: [{ ...EMPTY_ACTIVITY }],
 };
 
+function createEmptyDay(dayNumber) {
+  return {
+    dayNumber,
+    title: "",
+    activities: [{ ...EMPTY_ACTIVITY }],
+  };
+}
+
 function normalizeImage(image) {
-  if (!image?.url || !image?.publicId) {
+  if (!image || typeof image !== "object") {
+    return null;
+  }
+
+  const url = String(image.url || "").trim();
+  const publicId = String(image.publicId || "").trim();
+
+  if (!url || !publicId) {
     return null;
   }
 
   return {
-    url: image.url,
-    publicId: image.publicId,
+    url,
+    publicId,
   };
 }
 
 function normalizeId(value) {
-  if (!value) return "";
+  if (!value) {
+    return "";
+  }
 
   if (typeof value === "string") {
     return value;
@@ -79,28 +110,25 @@ function extractList(response, keys = []) {
   return [];
 }
 
-function createEmptyDay(dayNumber) {
-  return {
-    dayNumber,
-    title: "",
-    activities: [{ ...EMPTY_ACTIVITY }],
-  };
-}
-
 function normalizeDays(days) {
   if (!Array.isArray(days) || days.length === 0) {
     return [createEmptyDay(1)];
   }
 
   return days.map((day, index) => ({
-    dayNumber: Number(day?.dayNumber) || index + 1,
-    title: day?.title || "",
+    dayNumber:
+      Number.isInteger(Number(day?.dayNumber)) && Number(day.dayNumber) > 0
+        ? Number(day.dayNumber)
+        : index + 1,
+
+    title: String(day?.title || ""),
+
     activities:
       Array.isArray(day?.activities) && day.activities.length > 0
         ? day.activities.map((activity) => ({
-            time: activity?.time || "",
-            title: activity?.title || "",
-            description: activity?.description || "",
+            time: String(activity?.time || ""),
+            title: String(activity?.title || ""),
+            description: String(activity?.description || ""),
             place: normalizeId(activity?.place),
           }))
         : [{ ...EMPTY_ACTIVITY }],
@@ -118,6 +146,7 @@ function normalizeInitialData(data) {
         nights: 0,
       },
       description: "",
+      currency: "INR",
       estimatedBudget: {
         min: "",
         max: "",
@@ -132,31 +161,57 @@ function normalizeInitialData(data) {
 
   return {
     destination: normalizeId(data.destination),
-    title: data.title || "",
-    slug: data.slug || "",
+
+    title: String(data.title || ""),
+
+    slug: String(data.slug || ""),
+
     duration: {
-      days: Number(data.duration?.days) || 1,
-      nights: Number(data.duration?.nights) || 0,
+      days:
+        Number.isInteger(Number(data.duration?.days)) &&
+        Number(data.duration?.days) >= 1
+          ? Number(data.duration.days)
+          : 1,
+
+      nights:
+        Number.isInteger(Number(data.duration?.nights)) &&
+        Number(data.duration?.nights) >= 0
+          ? Number(data.duration.nights)
+          : 0,
     },
-    description: data.description || "",
+
+    description: String(data.description || ""),
+
+    currency: SUPPORTED_CURRENCIES.includes(
+      String(data.currency || "").toUpperCase(),
+    )
+      ? String(data.currency).toUpperCase()
+      : "INR",
+
     estimatedBudget: {
       min:
         data.estimatedBudget?.min !== undefined &&
         data.estimatedBudget?.min !== null
           ? String(data.estimatedBudget.min)
           : "",
+
       max:
         data.estimatedBudget?.max !== undefined &&
         data.estimatedBudget?.max !== null
           ? String(data.estimatedBudget.max)
           : "",
     },
+
     days: normalizeDays(data.days),
+
     coverImage: normalizeImage(data.coverImage),
+
     gallery: Array.isArray(data.gallery)
       ? data.gallery.map(normalizeImage).filter(Boolean)
       : [],
-    isFeatured: Boolean(data.isFeatured),
+
+    isFeatured: data.isFeatured === true,
+
     isActive: data.isActive !== false,
   };
 }
@@ -186,18 +241,10 @@ export default function ItineraryForm({
   const [uploadingCover, setUploadingCover] = useState(false);
   const [uploadingGallery, setUploadingGallery] = useState(false);
 
-  const [uploadedImages, setUploadedImages] = useState([]);
+  /* ============================================================
+     LOAD DESTINATIONS + PLACES
+  ============================================================ */
 
-  /*
-   * ---------------------------------------------------------
-   * Load destinations + places
-   * ---------------------------------------------------------
-   *
-   * IMPORTANT:
-   * There is only one loading state.
-   * Promise.allSettled guarantees that a failed endpoint
-   * cannot leave the form permanently stuck on loading.
-   */
   useEffect(() => {
     let cancelled = false;
 
@@ -211,7 +258,9 @@ export default function ItineraryForm({
           adminApi.get("/api/dashboard/places"),
         ]);
 
-        if (cancelled) return;
+        if (cancelled) {
+          return;
+        }
 
         const destinationsResult = results[0];
         const placesResult = results[1];
@@ -280,22 +329,22 @@ export default function ItineraryForm({
     };
   }, []);
 
-  /*
-   * ---------------------------------------------------------
-   * Sync form when edit data arrives/changes
-   * ---------------------------------------------------------
-   */
+  /* ============================================================
+     SYNC EDIT DATA
+  ============================================================ */
+
   useEffect(() => {
-    if (!sourceData) return;
+    if (!sourceData) {
+      return;
+    }
 
     setForm(normalizeInitialData(sourceData));
   }, [sourceData]);
 
-  /*
-   * ---------------------------------------------------------
-   * Places for selected destination
-   * ---------------------------------------------------------
-   */
+  /* ============================================================
+     FILTER PLACES BY DESTINATION
+  ============================================================ */
+
   const destinationPlaces = useMemo(() => {
     if (!form.destination) {
       return [];
@@ -306,11 +355,10 @@ export default function ItineraryForm({
     );
   }, [places, form.destination]);
 
-  /*
-   * ---------------------------------------------------------
-   * Helpers
-   * ---------------------------------------------------------
-   */
+  /* ============================================================
+     FORM HELPERS
+  ============================================================ */
+
   function updateForm(field, value) {
     setForm((previous) => ({
       ...previous,
@@ -357,6 +405,7 @@ export default function ItineraryForm({
   function updateActivity(dayIndex, activityIndex, field, value) {
     setForm((previous) => {
       const days = [...previous.days];
+
       const activities = [...days[dayIndex].activities];
 
       activities[activityIndex] = {
@@ -376,15 +425,33 @@ export default function ItineraryForm({
     });
   }
 
-  function addDay() {
+  function handleDestinationChange(value) {
     setForm((previous) => ({
       ...previous,
-      days: [...previous.days, createEmptyDay(previous.days.length + 1)],
-      duration: {
-        ...previous.duration,
-        days: previous.days.length + 1,
-      },
+      destination: value,
+      days: previous.days.map((day) => ({
+        ...day,
+        activities: day.activities.map((activity) => ({
+          ...activity,
+          place: "",
+        })),
+      })),
     }));
+  }
+
+  function addDay() {
+    setForm((previous) => {
+      const nextDayNumber = previous.days.length + 1;
+
+      return {
+        ...previous,
+        days: [...previous.days, createEmptyDay(nextDayNumber)],
+        duration: {
+          ...previous.duration,
+          days: nextDayNumber,
+        },
+      };
+    });
   }
 
   function removeDay(dayIndex) {
@@ -451,20 +518,23 @@ export default function ItineraryForm({
     });
   }
 
-  /*
-   * ---------------------------------------------------------
-   * Cloudinary upload
-   * ---------------------------------------------------------
-   */
+  /* ============================================================
+     CLOUDINARY UPLOAD
+  ============================================================ */
+
   async function uploadImage(file, folder) {
     if (!file) {
       return null;
     }
 
+    if (!file.type.startsWith("image/")) {
+      throw new Error("Only image files are allowed.");
+    }
+
     const token = getToken();
 
     if (!token) {
-      throw new Error("Your admin session has expired.");
+      throw new Error("Your admin session has expired. Please login again.");
     }
 
     const formData = new FormData();
@@ -494,6 +564,10 @@ export default function ItineraryForm({
       );
     }
 
+    if (!URL_REGEX.test(image.url)) {
+      throw new Error("Uploaded image returned an invalid URL.");
+    }
+
     return image;
   }
 
@@ -517,8 +591,6 @@ export default function ItineraryForm({
         ...previous,
         coverImage: image,
       }));
-
-      setUploadedImages((previous) => [...previous, image]);
     } catch (uploadError) {
       console.error("Cover upload failed:", uploadError);
 
@@ -537,6 +609,17 @@ export default function ItineraryForm({
       return;
     }
 
+    const remainingSlots = MAX_GALLERY_IMAGES - form.gallery.length;
+
+    if (remainingSlots <= 0) {
+      setError(
+        `Gallery can contain a maximum of ${MAX_GALLERY_IMAGES} images.`,
+      );
+      return;
+    }
+
+    const filesToUpload = files.slice(0, remainingSlots);
+
     setUploadingGallery(true);
     setError("");
     setSuccess("");
@@ -544,7 +627,7 @@ export default function ItineraryForm({
     try {
       const uploaded = [];
 
-      for (const file of files) {
+      for (const file of filesToUpload) {
         const image = await uploadImage(file, "tourism/itineraries/gallery");
 
         if (image) {
@@ -557,8 +640,6 @@ export default function ItineraryForm({
           ...previous,
           gallery: [...previous.gallery, ...uploaded],
         }));
-
-        setUploadedImages((previous) => [...previous, ...uploaded]);
       }
     } catch (uploadError) {
       console.error("Gallery upload failed:", uploadError);
@@ -570,7 +651,9 @@ export default function ItineraryForm({
   }
 
   function removeCoverImage() {
-    if (readOnly) return;
+    if (readOnly) {
+      return;
+    }
 
     setForm((previous) => ({
       ...previous,
@@ -579,7 +662,9 @@ export default function ItineraryForm({
   }
 
   function removeGalleryImage(index) {
-    if (readOnly) return;
+    if (readOnly) {
+      return;
+    }
 
     setForm((previous) => ({
       ...previous,
@@ -587,26 +672,61 @@ export default function ItineraryForm({
     }));
   }
 
-  /*
-   * ---------------------------------------------------------
-   * Validation
-   * ---------------------------------------------------------
-   */
+  /* ============================================================
+     VALIDATION
+  ============================================================ */
+
   function validateForm() {
+    const title = form.title.trim();
+    const slug = form.slug.trim().toLowerCase();
+    const description = form.description.trim();
+
     if (!form.destination) {
       return "Please select a destination.";
     }
 
-    if (!form.title.trim()) {
+    if (!title) {
       return "Please enter an itinerary title.";
     }
 
-    if (!form.slug.trim()) {
+    if (title.length < 2) {
+      return "Itinerary title must contain at least 2 characters.";
+    }
+
+    if (title.length > MAX_TITLE_LENGTH) {
+      return `Itinerary title cannot exceed ${MAX_TITLE_LENGTH} characters.`;
+    }
+
+    if (!NAME_REGEX.test(title)) {
+      return "Itinerary title can contain only letters and spaces.";
+    }
+
+    if (!slug) {
       return "Please enter an itinerary slug.";
     }
 
-    if (!form.description.trim()) {
+    if (slug.length > MAX_TITLE_LENGTH) {
+      return `Slug cannot exceed ${MAX_TITLE_LENGTH} characters.`;
+    }
+
+    if (!SLUG_REGEX.test(slug)) {
+      return "Slug can contain only lowercase letters, numbers and hyphens.";
+    }
+
+    if (!SUPPORTED_CURRENCIES.includes(form.currency)) {
+      return "Please select a valid currency.";
+    }
+
+    if (!description) {
       return "Please enter an itinerary description.";
+    }
+
+    if (description.length < 10) {
+      return "Itinerary description must contain at least 10 characters.";
+    }
+
+    if (description.length > MAX_DESCRIPTION_LENGTH) {
+      return `Description cannot exceed ${MAX_DESCRIPTION_LENGTH} characters.`;
     }
 
     const days = Number(form.duration.days);
@@ -617,11 +737,36 @@ export default function ItineraryForm({
     }
 
     if (!Number.isInteger(nights) || nights < 0) {
-      return "Duration nights cannot be negative.";
+      return "Duration nights must be 0 or greater.";
     }
 
-    if (!form.coverImage?.url || !form.coverImage?.publicId) {
+    if (!form.coverImage?.url) {
       return "Please upload a cover image.";
+    }
+
+    if (!form.coverImage?.publicId) {
+      return "Cover image information is incomplete. Please upload the image again.";
+    }
+
+    if (!URL_REGEX.test(form.coverImage.url)) {
+      return "Cover image URL is invalid.";
+    }
+
+    if (
+      !Array.isArray(form.gallery) ||
+      form.gallery.length > MAX_GALLERY_IMAGES
+    ) {
+      return `Gallery cannot contain more than ${MAX_GALLERY_IMAGES} images.`;
+    }
+
+    for (const image of form.gallery) {
+      if (!image?.url || !image?.publicId) {
+        return "One or more gallery images are invalid.";
+      }
+
+      if (!URL_REGEX.test(image.url)) {
+        return "One or more gallery image URLs are invalid.";
+      }
     }
 
     if (!Array.isArray(form.days) || form.days.length === 0) {
@@ -631,8 +776,14 @@ export default function ItineraryForm({
     for (let dayIndex = 0; dayIndex < form.days.length; dayIndex++) {
       const day = form.days[dayIndex];
 
-      if (!day.title.trim()) {
+      const dayTitle = day.title.trim();
+
+      if (!dayTitle) {
         return `Please enter a title for Day ${dayIndex + 1}.`;
+      }
+
+      if (dayTitle.length > MAX_DAY_TITLE_LENGTH) {
+        return `Day ${dayIndex + 1} title cannot exceed ${MAX_DAY_TITLE_LENGTH} characters.`;
       }
 
       if (!Array.isArray(day.activities) || day.activities.length === 0) {
@@ -646,8 +797,36 @@ export default function ItineraryForm({
       ) {
         const activity = day.activities[activityIndex];
 
-        if (!activity.title.trim()) {
+        const activityTitle = activity.title.trim();
+
+        const activityTime = activity.time?.trim() || "";
+
+        const activityDescription = activity.description?.trim() || "";
+
+        if (!activityTitle) {
           return `Please enter an activity title for Day ${dayIndex + 1}.`;
+        }
+
+        if (activityTitle.length > MAX_ACTIVITY_TITLE_LENGTH) {
+          return `Activity title in Day ${dayIndex + 1} cannot exceed ${MAX_ACTIVITY_TITLE_LENGTH} characters.`;
+        }
+
+        if (activityTime.length > MAX_ACTIVITY_TIME_LENGTH) {
+          return `Activity time in Day ${dayIndex + 1} cannot exceed ${MAX_ACTIVITY_TIME_LENGTH} characters.`;
+        }
+
+        if (activityDescription.length > MAX_ACTIVITY_DESCRIPTION_LENGTH) {
+          return `Activity description in Day ${dayIndex + 1} cannot exceed ${MAX_ACTIVITY_DESCRIPTION_LENGTH} characters.`;
+        }
+
+        if (activity.place) {
+          const placeExists = destinationPlaces.some(
+            (place) => normalizeId(place._id) === normalizeId(activity.place),
+          );
+
+          if (!placeExists) {
+            return `Selected place in Day ${dayIndex + 1} does not belong to the selected destination.`;
+          }
         }
       }
     }
@@ -670,14 +849,102 @@ export default function ItineraryForm({
       return "Maximum budget cannot be lower than minimum budget.";
     }
 
+    if (mode === "edit" && !itineraryId) {
+      return "Itinerary ID is missing.";
+    }
+
     return "";
   }
 
-  /*
-   * ---------------------------------------------------------
-   * Submit
-   * ---------------------------------------------------------
-   */
+  /* ============================================================
+     BUILD PAYLOAD
+  ============================================================ */
+
+  function buildPayload() {
+    const minBudget =
+      form.estimatedBudget.min === "" ? null : Number(form.estimatedBudget.min);
+
+    const maxBudget =
+      form.estimatedBudget.max === "" ? null : Number(form.estimatedBudget.max);
+
+    const payload = {
+      destination: form.destination,
+
+      title: form.title.trim(),
+
+      slug: form.slug.trim().toLowerCase(),
+
+      duration: {
+        days: Number(form.duration.days),
+        nights: Number(form.duration.nights),
+      },
+
+      description: form.description.trim(),
+
+      currency: form.currency,
+
+      days: form.days.map((day, dayIndex) => ({
+        dayNumber: dayIndex + 1,
+
+        title: day.title.trim(),
+
+        activities: day.activities.map((activity) => {
+          const item = {
+            title: activity.title.trim(),
+          };
+
+          if (activity.time?.trim()) {
+            item.time = activity.time.trim();
+          }
+
+          if (activity.description?.trim()) {
+            item.description = activity.description.trim();
+          }
+
+          if (activity.place) {
+            item.place = activity.place;
+          }
+
+          return item;
+        }),
+      })),
+
+      coverImage: {
+        url: form.coverImage.url.trim(),
+        publicId: form.coverImage.publicId.trim(),
+      },
+
+      gallery: Array.isArray(form.gallery)
+        ? form.gallery.map((image) => ({
+            url: image.url.trim(),
+            publicId: image.publicId.trim(),
+          }))
+        : [],
+
+      isFeatured: form.isFeatured === true,
+
+      isActive: form.isActive === true,
+    };
+
+    if (minBudget !== null || maxBudget !== null) {
+      payload.estimatedBudget = {};
+
+      if (minBudget !== null) {
+        payload.estimatedBudget.min = minBudget;
+      }
+
+      if (maxBudget !== null) {
+        payload.estimatedBudget.max = maxBudget;
+      }
+    }
+
+    return payload;
+  }
+
+  /* ============================================================
+     SUBMIT
+  ============================================================ */
+
   async function handleSubmit(event) {
     event.preventDefault();
 
@@ -698,66 +965,7 @@ export default function ItineraryForm({
     setSaving(true);
 
     try {
-      const payload = {
-        destination: form.destination,
-        title: form.title.trim(),
-        slug: form.slug.trim().toLowerCase(),
-        duration: {
-          days: Number(form.duration.days),
-          nights: Number(form.duration.nights),
-        },
-        description: form.description.trim(),
-
-        days: form.days.map((day, dayIndex) => ({
-          dayNumber: dayIndex + 1,
-          title: day.title.trim(),
-
-          activities: day.activities.map((activity) => {
-            const item = {
-              time: activity.time?.trim() || "",
-              title: activity.title.trim(),
-              description: activity.description?.trim() || "",
-            };
-
-            if (activity.place) {
-              item.place = activity.place;
-            }
-
-            return item;
-          }),
-        })),
-
-        coverImage: form.coverImage,
-
-        gallery: Array.isArray(form.gallery)
-          ? form.gallery.filter((image) => image?.url && image?.publicId)
-          : [],
-
-        isFeatured: Boolean(form.isFeatured),
-        isActive: Boolean(form.isActive),
-      };
-
-      const minBudget =
-        form.estimatedBudget.min === ""
-          ? null
-          : Number(form.estimatedBudget.min);
-
-      const maxBudget =
-        form.estimatedBudget.max === ""
-          ? null
-          : Number(form.estimatedBudget.max);
-
-      if (minBudget !== null || maxBudget !== null) {
-        payload.estimatedBudget = {};
-
-        if (minBudget !== null) {
-          payload.estimatedBudget.min = minBudget;
-        }
-
-        if (maxBudget !== null) {
-          payload.estimatedBudget.max = maxBudget;
-        }
-      }
+      const payload = buildPayload();
 
       let response;
 
@@ -792,11 +1000,10 @@ export default function ItineraryForm({
     }
   }
 
-  /*
-   * ---------------------------------------------------------
-   * Loading
-   * ---------------------------------------------------------
-   */
+  /* ============================================================
+     LOADING
+  ============================================================ */
+
   if (loading) {
     return (
       <div className="flex min-h-[420px] items-center justify-center">
@@ -817,11 +1024,10 @@ export default function ItineraryForm({
     );
   }
 
-  /*
-   * ---------------------------------------------------------
-   * Read-only helper
-   * ---------------------------------------------------------
-   */
+  /* ============================================================
+     STYLES
+  ============================================================ */
+
   const inputClass =
     "w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-sm text-slate-800 outline-none transition placeholder:text-slate-400 focus:border-emerald-400 focus:ring-4 focus:ring-emerald-50 disabled:cursor-not-allowed disabled:bg-slate-50";
 
@@ -843,7 +1049,10 @@ export default function ItineraryForm({
         </div>
       ) : null}
 
-      {/* Basic information */}
+      {/* ========================================================
+          BASIC INFORMATION
+      ======================================================== */}
+
       <section className="rounded-2xl border border-emerald-100 bg-white p-4 shadow-sm sm:p-6">
         <div className="mb-5 flex items-center gap-3">
           <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-50 text-emerald-600">
@@ -870,21 +1079,7 @@ export default function ItineraryForm({
 
             <select
               value={form.destination}
-              onChange={(event) => {
-                updateForm("destination", event.target.value);
-
-                setForm((previous) => ({
-                  ...previous,
-                  destination: event.target.value,
-                  days: previous.days.map((day) => ({
-                    ...day,
-                    activities: day.activities.map((activity) => ({
-                      ...activity,
-                      place: "",
-                    })),
-                  })),
-                }));
-              }}
+              onChange={(event) => handleDestinationChange(event.target.value)}
               disabled={readOnly}
               className={inputClass}
             >
@@ -913,11 +1108,16 @@ export default function ItineraryForm({
             <input
               type="text"
               value={form.title}
+              maxLength={MAX_TITLE_LENGTH}
               onChange={(event) => updateForm("title", event.target.value)}
               placeholder="e.g. Chennai Weekend Explorer"
               disabled={readOnly}
               className={inputClass}
             />
+
+            <p className="mt-1 text-[11px] text-slate-400">
+              Letters and spaces only.
+            </p>
           </div>
 
           {/* Slug */}
@@ -929,10 +1129,15 @@ export default function ItineraryForm({
             <input
               type="text"
               value={form.slug}
+              maxLength={MAX_TITLE_LENGTH}
               onChange={(event) =>
                 updateForm(
                   "slug",
-                  event.target.value.toLowerCase().replace(/\s+/g, "-"),
+                  event.target.value
+                    .toLowerCase()
+                    .replace(/[^a-z0-9\s-]/g, "")
+                    .replace(/\s+/g, "-")
+                    .replace(/-+/g, "-"),
                 )
               }
               placeholder="chennai-weekend-explorer"
@@ -950,14 +1155,12 @@ export default function ItineraryForm({
             <input
               type="number"
               min="1"
+              step="1"
               value={form.duration.days}
               onChange={(event) => {
-                const value = Number(event.target.value);
+                const value = event.target.value;
 
-                updateDuration(
-                  "days",
-                  Number.isFinite(value) && value > 0 ? value : 1,
-                );
+                updateDuration("days", value === "" ? "" : Number(value));
               }}
               disabled={readOnly}
               className={inputClass}
@@ -973,8 +1176,13 @@ export default function ItineraryForm({
             <input
               type="number"
               min="0"
+              step="1"
               value={form.duration.nights}
-              onChange={(event) => updateDuration("nights", event.target.value)}
+              onChange={(event) => {
+                const value = event.target.value;
+
+                updateDuration("nights", value === "" ? "" : Number(value));
+              }}
               disabled={readOnly}
               className={inputClass}
             />
@@ -990,15 +1198,23 @@ export default function ItineraryForm({
           <textarea
             rows={5}
             value={form.description}
+            maxLength={MAX_DESCRIPTION_LENGTH}
             onChange={(event) => updateForm("description", event.target.value)}
             placeholder="Describe the itinerary..."
             disabled={readOnly}
             className={inputClass}
           />
+
+          <p className="mt-1 text-right text-[11px] text-slate-400">
+            {form.description.length}/{MAX_DESCRIPTION_LENGTH}
+          </p>
         </div>
       </section>
 
-      {/* Budget */}
+      {/* ========================================================
+          BUDGET
+      ======================================================== */}
+
       <section className="rounded-2xl border border-emerald-100 bg-white p-4 shadow-sm sm:p-6">
         <div className="mb-5 flex items-center gap-3">
           <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-50 text-emerald-600">
@@ -1016,30 +1232,52 @@ export default function ItineraryForm({
           </div>
         </div>
 
-        <div className="grid gap-5 sm:grid-cols-2">
+        <div className="grid gap-5 sm:grid-cols-3">
+          {/* Currency */}
+          <div>
+            <label className={labelClass}>
+              Currency <span className="text-red-500">*</span>
+            </label>
+
+            <select
+              value={form.currency}
+              onChange={(event) => updateForm("currency", event.target.value)}
+              disabled={readOnly}
+              className={inputClass}
+            >
+              <option value="INR">INR — Indian Rupee</option>
+
+              <option value="USD">USD — US Dollar</option>
+            </select>
+          </div>
+
+          {/* Minimum */}
           <div>
             <label className={labelClass}>Minimum Budget</label>
 
             <input
               type="number"
               min="0"
+              step="0.01"
               value={form.estimatedBudget.min}
               onChange={(event) => updateBudget("min", event.target.value)}
-              placeholder="e.g. 5000"
+              placeholder={form.currency === "USD" ? "e.g. 100" : "e.g. 5000"}
               disabled={readOnly}
               className={inputClass}
             />
           </div>
 
+          {/* Maximum */}
           <div>
             <label className={labelClass}>Maximum Budget</label>
 
             <input
               type="number"
               min="0"
+              step="0.01"
               value={form.estimatedBudget.max}
               onChange={(event) => updateBudget("max", event.target.value)}
-              placeholder="e.g. 12000"
+              placeholder={form.currency === "USD" ? "e.g. 300" : "e.g. 12000"}
               disabled={readOnly}
               className={inputClass}
             />
@@ -1047,7 +1285,10 @@ export default function ItineraryForm({
         </div>
       </section>
 
-      {/* Cover image */}
+      {/* ========================================================
+          COVER IMAGE
+      ======================================================== */}
+
       <section className="rounded-2xl border border-emerald-100 bg-white p-4 shadow-sm sm:p-6">
         <div className="mb-5 flex items-center gap-3">
           <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-50 text-emerald-600">
@@ -1120,7 +1361,10 @@ export default function ItineraryForm({
         )}
       </section>
 
-      {/* Gallery */}
+      {/* ========================================================
+          GALLERY
+      ======================================================== */}
+
       <section className="rounded-2xl border border-emerald-100 bg-white p-4 shadow-sm sm:p-6">
         <div className="mb-5 flex items-center justify-between gap-4">
           <div className="flex items-center gap-3">
@@ -1138,7 +1382,13 @@ export default function ItineraryForm({
           </div>
 
           {!readOnly ? (
-            <label className="inline-flex cursor-pointer items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-700 transition hover:bg-emerald-100">
+            <label
+              className={`inline-flex items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-700 transition ${
+                form.gallery.length >= MAX_GALLERY_IMAGES
+                  ? "cursor-not-allowed opacity-50"
+                  : "cursor-pointer hover:bg-emerald-100"
+              }`}
+            >
               {uploadingGallery ? (
                 <Loader2 size={15} className="animate-spin" />
               ) : (
@@ -1150,12 +1400,18 @@ export default function ItineraryForm({
                 multiple
                 accept="image/png,image/jpeg,image/webp"
                 onChange={handleGalleryUpload}
-                disabled={uploadingGallery}
+                disabled={
+                  uploadingGallery || form.gallery.length >= MAX_GALLERY_IMAGES
+                }
                 className="hidden"
               />
             </label>
           ) : null}
         </div>
+
+        <p className="mb-4 text-xs text-slate-400">
+          {form.gallery.length}/{MAX_GALLERY_IMAGES} images
+        </p>
 
         {form.gallery.length > 0 ? (
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
@@ -1193,7 +1449,10 @@ export default function ItineraryForm({
         )}
       </section>
 
-      {/* Daily itinerary */}
+      {/* ========================================================
+          DAILY ITINERARY
+      ======================================================== */}
+
       <section className="rounded-2xl border border-emerald-100 bg-white p-4 shadow-sm sm:p-6">
         <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex items-center gap-3">
@@ -1270,6 +1529,7 @@ export default function ItineraryForm({
                 <input
                   type="text"
                   value={day.title}
+                  maxLength={MAX_DAY_TITLE_LENGTH}
                   onChange={(event) =>
                     updateDay(dayIndex, "title", event.target.value)
                   }
@@ -1318,6 +1578,7 @@ export default function ItineraryForm({
                         <input
                           type="text"
                           value={activity.time}
+                          maxLength={MAX_ACTIVITY_TIME_LENGTH}
                           onChange={(event) =>
                             updateActivity(
                               dayIndex,
@@ -1375,6 +1636,7 @@ export default function ItineraryForm({
                       <input
                         type="text"
                         value={activity.title}
+                        maxLength={MAX_ACTIVITY_TITLE_LENGTH}
                         onChange={(event) =>
                           updateActivity(
                             dayIndex,
@@ -1396,6 +1658,7 @@ export default function ItineraryForm({
                       <textarea
                         rows={3}
                         value={activity.description}
+                        maxLength={MAX_ACTIVITY_DESCRIPTION_LENGTH}
                         onChange={(event) =>
                           updateActivity(
                             dayIndex,
@@ -1428,7 +1691,10 @@ export default function ItineraryForm({
         </div>
       </section>
 
-      {/* Status */}
+      {/* ========================================================
+          VISIBILITY
+      ======================================================== */}
+
       <section className="rounded-2xl border border-emerald-100 bg-white p-4 shadow-sm sm:p-6">
         <div className="mb-5">
           <h2 className="text-base font-bold text-slate-900">Visibility</h2>
@@ -1503,7 +1769,10 @@ export default function ItineraryForm({
         </div>
       </section>
 
-      {/* Footer actions */}
+      {/* ========================================================
+          FOOTER ACTIONS
+      ======================================================== */}
+
       {!readOnly ? (
         <div className="flex flex-col-reverse gap-3 border-t border-slate-200 pt-5 sm:flex-row sm:justify-end">
           {typeof onCancel === "function" ? (

@@ -1,346 +1,730 @@
 import { NextResponse } from "next/server";
 
 import connectDB from "@/utils/mongodb";
-import { Destination } from "@/utils/schema";
+import {
+  Destination,
+  SUPPORTED_LANGUAGES,
+  SUPPORTED_CURRENCIES,
+  nameRegex,
+  slugRegex,
+  urlRegex,
+} from "@/utils/schema";
+
 import { requireAdmin } from "@/utils/adminAuth";
+
+/* =========================================================
+   HELPERS
+========================================================= */
+
+function errorResponse(
+  message,
+  status = 400,
+) {
+  return NextResponse.json(
+    {
+      success: false,
+      message,
+    },
+    {
+      status,
+    },
+  );
+}
+
+function normalizeString(value) {
+  if (typeof value !== "string") {
+    return "";
+  }
+
+  return value.trim();
+}
+
+function isValidBoolean(value) {
+  return typeof value === "boolean";
+}
+
+function validateCoordinate(
+  value,
+  min,
+  max,
+  fieldName,
+) {
+  if (
+    value === undefined ||
+    value === null ||
+    value === ""
+  ) {
+    return null;
+  }
+
+  const number = Number(value);
+
+  if (!Number.isFinite(number)) {
+    return `${fieldName} must be a valid number.`;
+  }
+
+  if (
+    number < min ||
+    number > max
+  ) {
+    return `${fieldName} must be between ${min} and ${max}.`;
+  }
+
+  return null;
+}
+
+function validateImage(
+  image,
+  fieldName = "Image",
+) {
+  if (
+    !image ||
+    typeof image !== "object"
+  ) {
+    return `${fieldName} is required.`;
+  }
+
+  const url = normalizeString(
+    image.url,
+  );
+
+  const publicId =
+    normalizeString(
+      image.publicId,
+    );
+
+  if (!url) {
+    return `${fieldName} URL is required.`;
+  }
+
+  if (!urlRegex.test(url)) {
+    return `${fieldName} URL must be a valid HTTP or HTTPS URL.`;
+  }
+
+  if (!publicId) {
+    return `${fieldName} public ID is required.`;
+  }
+
+  return null;
+}
+
+function normalizeImage(image) {
+  if (
+    !image ||
+    typeof image !== "object"
+  ) {
+    return null;
+  }
+
+  return {
+    url: normalizeString(
+      image.url,
+    ),
+    publicId: normalizeString(
+      image.publicId,
+    ),
+  };
+}
+
+function validateGallery(
+  gallery,
+) {
+  if (gallery === undefined) {
+    return [];
+  }
+
+  if (!Array.isArray(gallery)) {
+    return "Gallery must be an array.";
+  }
+
+  if (gallery.length > 30) {
+    return "Gallery cannot contain more than 30 images.";
+  }
+
+  for (
+    let index = 0;
+    index < gallery.length;
+    index += 1
+  ) {
+    const error =
+      validateImage(
+        gallery[index],
+        `Gallery image ${index + 1}`,
+      );
+
+    if (error) {
+      return error;
+    }
+  }
+
+  return null;
+}
+
+/* =========================================================
+   GET
+   GET /api/dashboard/destinations
+========================================================= */
 
 export async function GET(request) {
   try {
-    const admin = await requireAdmin(request);
+    const admin =
+      await requireAdmin(request);
 
     if (!admin) {
-      return NextResponse.json(
-        {
-          success: false,
-          message: "Unauthorized",
-        },
-        { status: 401 },
+      return errorResponse(
+        "Unauthorized. Admin access required.",
+        401,
       );
     }
 
     await connectDB();
 
-    const destinations = await Destination.find({})
-      .sort({ createdAt: -1 })
-      .lean();
-
-    return NextResponse.json({
-      success: true,
-      data: destinations,
-    });
-  } catch (error) {
-    console.error("GET destinations error:", error);
-
-    return NextResponse.json(
-      {
-        success: false,
-        message: "Failed to fetch destinations",
-      },
-      { status: 500 },
-    );
-  }
-}
-
-export async function POST(request) {
-  try {
-    const admin = await requireAdmin(request);
-
-    if (!admin) {
-      return NextResponse.json(
-        {
-          success: false,
-          message: "Unauthorized",
-        },
-        { status: 401 },
-      );
-    }
-
-    await connectDB();
-
-    const body = await request.json();
-
-    const {
-      name,
-      slug,
-      type,
-      country,
-      state,
-      description,
-      shortDescription,
-      bestTimeToVisit,
-      language,
-      currency,
-      coverImage,
-      gallery,
-      latitude,
-      longitude,
-      address,
-      isFeatured,
-      isActive,
-    } = body;
+    const destinations =
+      await Destination.find({})
+        .sort({
+          createdAt: -1,
+        })
+        .lean();
 
     /*
-     * -----------------------------------------------
-     * REQUIRED FIELDS
-     * -----------------------------------------------
+     * IMPORTANT:
+     *
+     * The frontend receives:
+     *
+     * response.data === destinations
+     *
+     * Example:
+     *
+     * {
+     *   success: true,
+     *   count: 3,
+     *   data: [
+     *     {...},
+     *     {...},
+     *     {...}
+     *   ]
+     * }
      */
-
-    if (!name || !slug || !type || !country || !description || !coverImage) {
-      return NextResponse.json(
-        {
-          success: false,
-          message:
-            "Name, slug, type, country, description and cover image are required",
-        },
-        { status: 400 },
-      );
-    }
-
-    /*
-     * -----------------------------------------------
-     * NORMALIZE BASIC VALUES
-     * -----------------------------------------------
-     */
-
-    const normalizedName = String(name).trim();
-    const normalizedSlug = String(slug).trim().toLowerCase();
-    const normalizedType = String(type).trim();
-    const normalizedCountry = String(country).trim();
-    const normalizedDescription = String(description).trim();
-
-    if (!normalizedName) {
-      return NextResponse.json(
-        {
-          success: false,
-          message: "Destination name cannot be empty",
-        },
-        { status: 400 },
-      );
-    }
-
-    if (!normalizedSlug) {
-      return NextResponse.json(
-        {
-          success: false,
-          message: "Slug cannot be empty",
-        },
-        { status: 400 },
-      );
-    }
-
-    if (!normalizedCountry) {
-      return NextResponse.json(
-        {
-          success: false,
-          message: "Country cannot be empty",
-        },
-        { status: 400 },
-      );
-    }
-
-    if (!normalizedDescription) {
-      return NextResponse.json(
-        {
-          success: false,
-          message: "Description cannot be empty",
-        },
-        { status: 400 },
-      );
-    }
-
-    /*
-     * -----------------------------------------------
-     * COVER IMAGE
-     * -----------------------------------------------
-     */
-
-    if (
-      typeof coverImage !== "object" ||
-      !coverImage.url ||
-      !coverImage.publicId
-    ) {
-      return NextResponse.json(
-        {
-          success: false,
-          message:
-            "Cover image must contain a valid Cloudinary URL and public ID",
-        },
-        { status: 400 },
-      );
-    }
-
-    const normalizedCoverImage = {
-      url: String(coverImage.url).trim(),
-      publicId: String(coverImage.publicId).trim(),
-    };
-
-    /*
-     * -----------------------------------------------
-     * GALLERY
-     * -----------------------------------------------
-     */
-
-    if (gallery !== undefined && !Array.isArray(gallery)) {
-      return NextResponse.json(
-        {
-          success: false,
-          message: "Gallery must be an array",
-        },
-        { status: 400 },
-      );
-    }
-
-    const normalizedGallery = Array.isArray(gallery)
-      ? gallery
-          .filter(
-            (image) =>
-              image && typeof image === "object" && image.url && image.publicId,
-          )
-          .map((image) => ({
-            url: String(image.url).trim(),
-            publicId: String(image.publicId).trim(),
-          }))
-      : [];
-
-    /*
-     * -----------------------------------------------
-     * CHECK DUPLICATE SLUG
-     * -----------------------------------------------
-     */
-
-    const existingDestination = await Destination.findOne({
-      slug: normalizedSlug,
-    });
-
-    if (existingDestination) {
-      return NextResponse.json(
-        {
-          success: false,
-          message: "Destination slug already exists",
-        },
-        { status: 409 },
-      );
-    }
-
-    /*
-     * -----------------------------------------------
-     * COORDINATES
-     * -----------------------------------------------
-     */
-
-    let normalizedLatitude;
-    let normalizedLongitude;
-
-    if (latitude !== undefined && latitude !== null && latitude !== "") {
-      normalizedLatitude = Number(latitude);
-
-      if (Number.isNaN(normalizedLatitude)) {
-        return NextResponse.json(
-          {
-            success: false,
-            message: "Latitude must be a valid number",
-          },
-          { status: 400 },
-        );
-      }
-    }
-
-    if (longitude !== undefined && longitude !== null && longitude !== "") {
-      normalizedLongitude = Number(longitude);
-
-      if (Number.isNaN(normalizedLongitude)) {
-        return NextResponse.json(
-          {
-            success: false,
-            message: "Longitude must be a valid number",
-          },
-          { status: 400 },
-        );
-      }
-    }
-
-    /*
-     * -----------------------------------------------
-     * CREATE
-     * -----------------------------------------------
-     */
-
-    const destination = await Destination.create({
-      name: normalizedName,
-
-      slug: normalizedSlug,
-
-      type: normalizedType,
-
-      country: normalizedCountry,
-
-      state: typeof state === "string" ? state.trim() : "",
-
-      description: normalizedDescription,
-
-      shortDescription:
-        typeof shortDescription === "string" ? shortDescription.trim() : "",
-
-      bestTimeToVisit:
-        typeof bestTimeToVisit === "string" ? bestTimeToVisit.trim() : "",
-
-      language: typeof language === "string" ? language.trim() : "",
-
-      currency: typeof currency === "string" ? currency.trim() : "",
-
-      coverImage: normalizedCoverImage,
-
-      gallery: normalizedGallery,
-
-      latitude: normalizedLatitude,
-
-      longitude: normalizedLongitude,
-
-      address: typeof address === "string" ? address.trim() : "",
-
-      isFeatured: typeof isFeatured === "boolean" ? isFeatured : false,
-
-      isActive: typeof isActive === "boolean" ? isActive : true,
-    });
 
     return NextResponse.json(
       {
         success: true,
-        message: "Destination created successfully",
-        data: destination,
+        count: destinations.length,
+        data: destinations,
       },
-      { status: 201 },
+      {
+        status: 200,
+      },
     );
   } catch (error) {
-    console.error("POST destination error:", error);
+    console.error(
+      "Get Destinations Error:",
+      error,
+    );
 
-    if (error?.name === "ValidationError") {
-      return NextResponse.json(
-        {
-          success: false,
-          message: "Validation failed",
-          errors: Object.values(error.errors).map((item) => item.message),
-        },
-        { status: 400 },
+    return errorResponse(
+      "Failed to fetch destinations.",
+      500,
+    );
+  }
+}
+
+/* =========================================================
+   POST
+   POST /api/dashboard/destinations
+========================================================= */
+
+export async function POST(request) {
+  try {
+    const admin =
+      await requireAdmin(request);
+
+    if (!admin) {
+      return errorResponse(
+        "Unauthorized. Admin access required.",
+        401,
       );
     }
 
-    if (error?.code === 11000) {
-      return NextResponse.json(
-        {
-          success: false,
-          message: "A destination with this slug already exists",
-        },
-        { status: 409 },
+    await connectDB();
+
+    let body;
+
+    try {
+      body = await request.json();
+    } catch {
+      return errorResponse(
+        "Invalid JSON request body.",
       );
     }
+
+    /* =======================================================
+       NORMALIZE
+    ======================================================= */
+
+    const name =
+      normalizeString(body.name);
+
+    const slug =
+      normalizeString(body.slug)
+        .toLowerCase();
+
+    const type =
+      normalizeString(body.type)
+        .toLowerCase();
+
+    const country =
+      normalizeString(body.country);
+
+    const state =
+      normalizeString(body.state);
+
+    const description =
+      normalizeString(
+        body.description,
+      );
+
+    const shortDescription =
+      normalizeString(
+        body.shortDescription,
+      );
+
+    const bestTimeToVisit =
+      normalizeString(
+        body.bestTimeToVisit,
+      );
+
+    const language =
+      normalizeString(
+        body.language,
+      );
+
+    const currency =
+      normalizeString(
+        body.currency,
+      ).toUpperCase();
+
+    const address =
+      normalizeString(
+        body.address,
+      );
+
+    /* =======================================================
+       REQUIRED
+    ======================================================= */
+
+    if (!name) {
+      return errorResponse(
+        "Destination name is required.",
+      );
+    }
+
+    if (!slug) {
+      return errorResponse(
+        "Destination slug is required.",
+      );
+    }
+
+    if (!type) {
+      return errorResponse(
+        "Destination type is required.",
+      );
+    }
+
+    if (!country) {
+      return errorResponse(
+        "Country is required.",
+      );
+    }
+
+    if (!description) {
+      return errorResponse(
+        "Description is required.",
+      );
+    }
+
+    if (!body.coverImage) {
+      return errorResponse(
+        "Cover image is required.",
+      );
+    }
+
+    /* =======================================================
+       NAME
+    ======================================================= */
+
+    if (!nameRegex.test(name)) {
+      return errorResponse(
+        "Destination name can contain alphabets and spaces only.",
+      );
+    }
+
+    if (
+      country &&
+      !nameRegex.test(country)
+    ) {
+      return errorResponse(
+        "Country can contain alphabets and spaces only.",
+      );
+    }
+
+    if (
+      state &&
+      !nameRegex.test(state)
+    ) {
+      return errorResponse(
+        "State can contain alphabets and spaces only.",
+      );
+    }
+
+    /* =======================================================
+       LENGTH
+    ======================================================= */
+
+    if (
+      name.length < 2 ||
+      name.length > 100
+    ) {
+      return errorResponse(
+        "Destination name must be between 2 and 100 characters.",
+      );
+    }
+
+    if (
+      country.length < 2 ||
+      country.length > 100
+    ) {
+      return errorResponse(
+        "Country must be between 2 and 100 characters.",
+      );
+    }
+
+    if (state.length > 100) {
+      return errorResponse(
+        "State cannot exceed 100 characters.",
+      );
+    }
+
+    if (
+      description.length < 10 ||
+      description.length > 5000
+    ) {
+      return errorResponse(
+        "Description must be between 10 and 5000 characters.",
+      );
+    }
+
+    if (
+      shortDescription.length > 500
+    ) {
+      return errorResponse(
+        "Short description cannot exceed 500 characters.",
+      );
+    }
+
+    if (
+      bestTimeToVisit.length > 200
+    ) {
+      return errorResponse(
+        "Best time to visit cannot exceed 200 characters.",
+      );
+    }
+
+    if (address.length > 500) {
+      return errorResponse(
+        "Address cannot exceed 500 characters.",
+      );
+    }
+
+    /* =======================================================
+       SLUG
+    ======================================================= */
+
+    if (!slugRegex.test(slug)) {
+      return errorResponse(
+        "Slug can contain lowercase letters, numbers, and hyphens only.",
+      );
+    }
+
+    /* =======================================================
+       TYPE
+    ======================================================= */
+
+    const allowedTypes = [
+      "country",
+      "state",
+      "city",
+      "region",
+    ];
+
+    if (
+      !allowedTypes.includes(type)
+    ) {
+      return errorResponse(
+        "Invalid destination type.",
+      );
+    }
+
+    /* =======================================================
+       LANGUAGE
+    ======================================================= */
+
+    if (
+      language &&
+      !SUPPORTED_LANGUAGES.includes(
+        language,
+      )
+    ) {
+      return errorResponse(
+        "Language must be Tamil, English, Hindi, or Malayalam.",
+      );
+    }
+
+    /* =======================================================
+       CURRENCY
+    ======================================================= */
+
+    if (
+      !SUPPORTED_CURRENCIES.includes(
+        currency,
+      )
+    ) {
+      return errorResponse(
+        "Currency must be INR or USD.",
+      );
+    }
+
+    /* =======================================================
+       COVER IMAGE
+    ======================================================= */
+
+    const coverImageError =
+      validateImage(
+        body.coverImage,
+        "Cover image",
+      );
+
+    if (coverImageError) {
+      return errorResponse(
+        coverImageError,
+      );
+    }
+
+    /* =======================================================
+       GALLERY
+    ======================================================= */
+
+    const galleryError =
+      validateGallery(
+        body.gallery,
+      );
+
+    if (galleryError) {
+      return errorResponse(
+        galleryError,
+      );
+    }
+
+    /* =======================================================
+       COORDINATES
+    ======================================================= */
+
+    const latitudeError =
+      validateCoordinate(
+        body.latitude,
+        -90,
+        90,
+        "Latitude",
+      );
+
+    if (latitudeError) {
+      return errorResponse(
+        latitudeError,
+      );
+    }
+
+    const longitudeError =
+      validateCoordinate(
+        body.longitude,
+        -180,
+        180,
+        "Longitude",
+      );
+
+    if (longitudeError) {
+      return errorResponse(
+        longitudeError,
+      );
+    }
+
+    /* =======================================================
+       BOOLEAN
+    ======================================================= */
+
+    const isFeatured =
+      body.isFeatured === undefined
+        ? false
+        : body.isFeatured;
+
+    const isActive =
+      body.isActive === undefined
+        ? true
+        : body.isActive;
+
+    if (
+      !isValidBoolean(isFeatured)
+    ) {
+      return errorResponse(
+        "isFeatured must be true or false.",
+      );
+    }
+
+    if (
+      !isValidBoolean(isActive)
+    ) {
+      return errorResponse(
+        "isActive must be true or false.",
+      );
+    }
+
+    /* =======================================================
+       DUPLICATE
+    ======================================================= */
+
+    const existingDestination =
+      await Destination.findOne({
+        slug,
+      }).lean();
+
+    if (existingDestination) {
+      return errorResponse(
+        "A destination with this slug already exists.",
+        409,
+      );
+    }
+
+    /* =======================================================
+       CREATE
+    ======================================================= */
+
+    const destination =
+      await Destination.create({
+        name,
+        slug,
+        type,
+        country,
+
+        state:
+          state || undefined,
+
+        description,
+
+        shortDescription:
+          shortDescription ||
+          undefined,
+
+        bestTimeToVisit:
+          bestTimeToVisit ||
+          undefined,
+
+        language:
+          language || undefined,
+
+        currency,
+
+        address:
+          address || undefined,
+
+        latitude:
+          body.latitude ===
+            undefined ||
+          body.latitude === null ||
+          body.latitude === ""
+            ? undefined
+            : Number(
+                body.latitude,
+              ),
+
+        longitude:
+          body.longitude ===
+            undefined ||
+          body.longitude === null ||
+          body.longitude === ""
+            ? undefined
+            : Number(
+                body.longitude,
+              ),
+
+        coverImage:
+          normalizeImage(
+            body.coverImage,
+          ),
+
+        gallery:
+          Array.isArray(
+            body.gallery,
+          )
+            ? body.gallery
+                .map(
+                  normalizeImage,
+                )
+                .filter(Boolean)
+            : [],
+
+        isFeatured,
+        isActive,
+      });
 
     return NextResponse.json(
       {
-        success: false,
-        message: "Failed to create destination",
+        success: true,
+        message:
+          "Destination created successfully.",
+        data: destination,
       },
-      { status: 500 },
+      {
+        status: 201,
+      },
+    );
+  } catch (error) {
+    console.error(
+      "Create Destination Error:",
+      error,
+    );
+
+    if (
+      error?.name ===
+      "ValidationError"
+    ) {
+      const messages =
+        Object.values(
+          error.errors,
+        )
+          .map(
+            (item) =>
+              item.message,
+          )
+          .join(", ");
+
+      return errorResponse(
+        messages ||
+          "Validation failed.",
+        400,
+      );
+    }
+
+    if (
+      error?.code === 11000
+    ) {
+      return errorResponse(
+        "A destination with this slug already exists.",
+        409,
+      );
+    }
+
+    return errorResponse(
+      "Failed to create destination.",
+      500,
     );
   }
 }

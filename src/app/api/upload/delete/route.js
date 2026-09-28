@@ -5,91 +5,104 @@ import cloudinary from "@/utils/cloudinary";
 
 export const runtime = "nodejs";
 
-export async function DELETE(request) {
+/* ============================================================
+   HELPERS
+============================================================ */
+
+function errorResponse(message, status = 400) {
+  return NextResponse.json(
+    {
+      success: false,
+      message,
+    },
+    { status },
+  );
+}
+
+async function deleteImage(request) {
   try {
-    /* ============================================================
+    /* ========================================================
        ADMIN AUTHENTICATION
-    ============================================================ */
+    ======================================================== */
 
     const admin = await requireAdmin(request);
 
     if (!admin) {
-      return NextResponse.json(
-        {
-          success: false,
-          message: "Unauthorized",
-        },
-        { status: 401 },
-      );
+      return errorResponse("Unauthorized. Admin access required.", 401);
     }
 
-    /* ============================================================
-       READ REQUEST BODY
-    ============================================================ */
+    /* ========================================================
+       CONTENT TYPE
+    ======================================================== */
+
+    const contentType = request.headers.get("content-type") || "";
+
+    if (!contentType.toLowerCase().includes("application/json")) {
+      return errorResponse("Invalid request. Expected application/json.", 415);
+    }
+
+    /* ========================================================
+       READ JSON
+    ======================================================== */
 
     let body;
 
     try {
       body = await request.json();
-    } catch {
-      return NextResponse.json(
-        {
-          success: false,
-          message: "Invalid JSON request body.",
-        },
-        { status: 400 },
-      );
+    } catch (error) {
+      console.error("Invalid delete JSON:", error);
+
+      return errorResponse("Invalid JSON request body.", 400);
     }
+
+    /* ========================================================
+       PUBLIC ID
+    ======================================================== */
 
     const publicId =
-      typeof body?.publicId === "string"
-        ? body.publicId.trim()
-        : "";
+      typeof body?.publicId === "string" ? body.publicId.trim() : "";
 
     if (!publicId) {
-      return NextResponse.json(
-        {
-          success: false,
-          message: "Cloudinary publicId is required.",
-        },
-        { status: 400 },
-      );
+      return errorResponse("Cloudinary publicId is required.", 400);
     }
 
-    /* ============================================================
-       CLOUDINARY DELETE
-    ============================================================ */
+    /*
+     * Prevent obvious invalid/path-like input.
+     *
+     * Cloudinary public IDs can contain folders and hyphens,
+     * so "/" is allowed.
+     */
+    if (publicId.includes("..") || !/^[a-zA-Z0-9_./-]+$/.test(publicId)) {
+      return errorResponse("Invalid Cloudinary publicId.", 400);
+    }
 
-    const result = await cloudinary.uploader.destroy(
+    /* ========================================================
+       CLOUDINARY DELETE
+    ======================================================== */
+
+    const result = await cloudinary.uploader.destroy(publicId, {
+      resource_type: "image",
+      invalidate: true,
+    });
+
+    console.log("Cloudinary delete result:", {
       publicId,
-      {
-        resource_type: "image",
-        invalidate: true,
-      },
-    );
+      result: result?.result,
+    });
+
+    /* ========================================================
+       CLOUDINARY RESULT
+    ======================================================== */
 
     /*
-     * Cloudinary normally returns:
+     * "ok"
+     *     Image was deleted.
      *
-     * { result: "ok" }
-     *
-     * It can also return:
-     *
-     * { result: "not found" }
-     *
-     * A missing image is effectively already deleted,
-     * so we can safely treat it as successful.
+     * "not found"
+     *     Image was already gone. This is still treated
+     *     as a successful final state.
      */
-
-    if (
-      result?.result !== "ok" &&
-      result?.result !== "not found"
-    ) {
-      console.error(
-        "Cloudinary delete failed:",
-        result,
-      );
-
+    if (result?.result !== "ok" && result?.result !== "not found") {
       return NextResponse.json(
         {
           success: false,
@@ -100,34 +113,48 @@ export async function DELETE(request) {
       );
     }
 
-    /* ============================================================
+    /* ========================================================
        SUCCESS
-    ============================================================ */
+    ======================================================== */
 
     return NextResponse.json(
       {
         success: true,
         message:
-          result?.result === "not found"
+          result.result === "not found"
             ? "Image was already removed."
             : "Image deleted successfully.",
+        result: result.result,
+        publicId,
       },
       { status: 200 },
     );
   } catch (error) {
-    console.error(
-      "Cloudinary image delete error:",
-      error,
-    );
+    console.error("Cloudinary image delete error:", error);
 
     return NextResponse.json(
       {
         success: false,
-        message:
-          error?.message ||
-          "Failed to delete image.",
+        message: error?.message || "Failed to delete image.",
       },
       { status: 500 },
     );
   }
+}
+
+/* ============================================================
+   DELETE
+============================================================ */
+
+export async function DELETE(request) {
+  return deleteImage(request);
+}
+
+/* ============================================================
+   POST
+   BACKWARD COMPATIBILITY
+============================================================ */
+
+export async function POST(request) {
+  return deleteImage(request);
 }

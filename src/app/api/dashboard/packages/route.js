@@ -2,42 +2,48 @@ import { NextResponse } from "next/server";
 import mongoose from "mongoose";
 
 import connectDB from "@/utils/mongodb";
-import { Destination, Package, Place } from "@/utils/schema";
+import {
+  Destination,
+  Package,
+  Place,
+  SUPPORTED_CURRENCIES,
+  nameRegex,
+  slugRegex,
+  urlRegex,
+} from "@/utils/schema";
 import { requireAdmin } from "@/utils/adminAuth";
 
 const ALLOWED_PRICE_TYPES = ["per-person", "per-couple", "per-group"];
 
-function parseBoolean(value, defaultValue = false) {
-  if (value === undefined || value === null) {
-    return defaultValue;
-  }
+const MAX_GALLERY_IMAGES = 30;
+const MAX_ARRAY_ITEMS = 50;
+const MAX_ITINERARY_DAYS = 60;
 
-  if (typeof value === "boolean") {
-    return value;
-  }
+function errorResponse(message, status = 400) {
+  return NextResponse.json(
+    {
+      success: false,
+      message,
+    },
+    { status },
+  );
+}
 
-  if (typeof value === "string") {
-    const normalized = value.trim().toLowerCase();
+function normalizeString(value) {
+  return typeof value === "string" ? value.trim() : "";
+}
 
-    if (normalized === "true") {
-      return true;
-    }
-
-    if (normalized === "false") {
-      return false;
-    }
-  }
-
-  return Boolean(value);
+function normalizeSlug(value) {
+  return normalizeString(value).toLowerCase();
 }
 
 function normalizeImage(image) {
-  if (!image || typeof image !== "object") {
+  if (!image || typeof image !== "object" || Array.isArray(image)) {
     return null;
   }
 
-  const url = String(image.url || "").trim();
-  const publicId = String(image.publicId || "").trim();
+  const url = normalizeString(image.url);
+  const publicId = normalizeString(image.publicId);
 
   if (!url || !publicId) {
     return null;
@@ -49,12 +55,100 @@ function normalizeImage(image) {
   };
 }
 
+function validateImage(image, fieldName = "Image") {
+  const normalizedImage = normalizeImage(image);
+
+  if (!normalizedImage) {
+    return {
+      valid: false,
+      message: `${fieldName} must contain both URL and public ID`,
+    };
+  }
+
+  if (!urlRegex.test(normalizedImage.url)) {
+    return {
+      valid: false,
+      message: `${fieldName} URL must be a valid HTTP or HTTPS URL`,
+    };
+  }
+
+  return {
+    valid: true,
+    image: normalizedImage,
+  };
+}
+
 function normalizeGallery(gallery) {
   if (!Array.isArray(gallery)) {
     return [];
   }
 
-  return gallery.map(normalizeImage).filter(Boolean);
+  return gallery.map(normalizeImage);
+}
+
+function validateGallery(gallery) {
+  if (!Array.isArray(gallery)) {
+    return {
+      valid: false,
+      message: "Gallery must be an array",
+    };
+  }
+
+  if (gallery.length > MAX_GALLERY_IMAGES) {
+    return {
+      valid: false,
+      message: `Gallery cannot contain more than ${MAX_GALLERY_IMAGES} images`,
+    };
+  }
+
+  const normalizedGallery = [];
+
+  for (let index = 0; index < gallery.length; index += 1) {
+    const result = validateImage(gallery[index], `Gallery image ${index + 1}`);
+
+    if (!result.valid) {
+      return result;
+    }
+
+    normalizedGallery.push(result.image);
+  }
+
+  return {
+    valid: true,
+    gallery: normalizedGallery,
+  };
+}
+
+function parseStrictBoolean(value) {
+  if (typeof value === "boolean") {
+    return {
+      valid: true,
+      value,
+    };
+  }
+
+  if (typeof value === "string") {
+    const normalized = value.trim().toLowerCase();
+
+    if (normalized === "true") {
+      return {
+        valid: true,
+        value: true,
+      };
+    }
+
+    if (normalized === "false") {
+      return {
+        valid: true,
+        value: false,
+      };
+    }
+  }
+
+  return {
+    valid: false,
+    message: "Value must be a boolean",
+  };
 }
 
 function normalizeStringArray(value) {
@@ -62,13 +156,243 @@ function normalizeStringArray(value) {
     return [];
   }
 
-  return value.map((item) => String(item || "").trim()).filter(Boolean);
+  return value.map((item) => normalizeString(item)).filter(Boolean);
 }
 
-function normalizeSlug(value) {
-  return String(value || "")
-    .trim()
-    .toLowerCase();
+function validateStringArray(
+  value,
+  fieldName,
+  maxItems = MAX_ARRAY_ITEMS,
+  maxItemLength = 200,
+) {
+  if (!Array.isArray(value)) {
+    return {
+      valid: false,
+      message: `${fieldName} must be an array`,
+    };
+  }
+
+  if (value.length > maxItems) {
+    return {
+      valid: false,
+      message: `${fieldName} cannot contain more than ${maxItems} items`,
+    };
+  }
+
+  const normalized = [];
+
+  for (let index = 0; index < value.length; index += 1) {
+    const item = normalizeString(value[index]);
+
+    if (!item) {
+      return {
+        valid: false,
+        message: `${fieldName} item ${index + 1} cannot be empty`,
+      };
+    }
+
+    if (item.length > maxItemLength) {
+      return {
+        valid: false,
+        message: `${fieldName} item ${index + 1} cannot exceed ${maxItemLength} characters`,
+      };
+    }
+
+    normalized.push(item);
+  }
+
+  return {
+    valid: true,
+    value: normalized,
+  };
+}
+
+function validateCurrency(currency) {
+  const normalized = normalizeString(currency).toUpperCase();
+
+  if (!SUPPORTED_CURRENCIES.includes(normalized)) {
+    return {
+      valid: false,
+      message: `Currency must be one of: ${SUPPORTED_CURRENCIES.join(", ")}`,
+    };
+  }
+
+  return {
+    valid: true,
+    value: normalized,
+  };
+}
+
+function validateName(value) {
+  const name = normalizeString(value);
+
+  if (!name) {
+    return {
+      valid: false,
+      message: "Package name is required",
+    };
+  }
+
+  if (name.length < 2 || name.length > 150) {
+    return {
+      valid: false,
+      message: "Package name must be between 2 and 150 characters",
+    };
+  }
+
+  if (!nameRegex.test(name)) {
+    return {
+      valid: false,
+      message: "Package name may contain alphabets and spaces only",
+    };
+  }
+
+  return {
+    valid: true,
+    value: name,
+  };
+}
+
+function validateSlug(value) {
+  const slug = normalizeSlug(value);
+
+  if (!slug) {
+    return {
+      valid: false,
+      message: "Package slug is required",
+    };
+  }
+
+  if (slug.length > 150) {
+    return {
+      valid: false,
+      message: "Package slug cannot exceed 150 characters",
+    };
+  }
+
+  if (!slugRegex.test(slug)) {
+    return {
+      valid: false,
+      message:
+        "Package slug may contain lowercase letters, numbers and hyphens only",
+    };
+  }
+
+  return {
+    valid: true,
+    value: slug,
+  };
+}
+
+function validateDescription(value) {
+  const description = normalizeString(value);
+
+  if (!description) {
+    return {
+      valid: false,
+      message: "Package description is required",
+    };
+  }
+
+  if (description.length < 10 || description.length > 5000) {
+    return {
+      valid: false,
+      message: "Package description must be between 10 and 5000 characters",
+    };
+  }
+
+  return {
+    valid: true,
+    value: description,
+  };
+}
+
+function validateShortDescription(value) {
+  const shortDescription = normalizeString(value);
+
+  if (shortDescription.length > 500) {
+    return {
+      valid: false,
+      message: "Short description cannot exceed 500 characters",
+    };
+  }
+
+  return {
+    valid: true,
+    value: shortDescription,
+  };
+}
+
+function validatePrice(value) {
+  const price = Number(value);
+
+  if (!Number.isFinite(price) || price < 0) {
+    return {
+      valid: false,
+      message: "Price must be a valid non-negative number",
+    };
+  }
+
+  return {
+    valid: true,
+    value: price,
+  };
+}
+
+function validateDuration(duration) {
+  if (!duration || typeof duration !== "object" || Array.isArray(duration)) {
+    return {
+      valid: false,
+      message: "Duration must contain days and nights",
+    };
+  }
+
+  const days = Number(duration.days);
+  const nights = Number(duration.nights);
+
+  if (
+    !Number.isInteger(days) ||
+    days < 1 ||
+    !Number.isInteger(nights) ||
+    nights < 0
+  ) {
+    return {
+      valid: false,
+      message:
+        "Duration days must be a whole number of at least 1 and nights must be a whole number of 0 or more",
+    };
+  }
+
+  if (days > 365 || nights > 365) {
+    return {
+      valid: false,
+      message: "Duration cannot exceed 365 days or nights",
+    };
+  }
+
+  return {
+    valid: true,
+    value: {
+      days,
+      nights,
+    },
+  };
+}
+
+function validatePriceType(value) {
+  const priceType = normalizeString(value);
+
+  if (!ALLOWED_PRICE_TYPES.includes(priceType)) {
+    return {
+      valid: false,
+      message: `Price type must be one of: ${ALLOWED_PRICE_TYPES.join(", ")}`,
+    };
+  }
+
+  return {
+    valid: true,
+    value: priceType,
+  };
 }
 
 async function validateItinerary(itinerary, destinationId) {
@@ -86,6 +410,13 @@ async function validateItinerary(itinerary, destinationId) {
     };
   }
 
+  if (itinerary.length > MAX_ITINERARY_DAYS) {
+    return {
+      valid: false,
+      message: `Itinerary cannot contain more than ${MAX_ITINERARY_DAYS} days`,
+    };
+  }
+
   const normalized = [];
   const usedDays = new Set();
   const allPlaceIds = new Set();
@@ -93,7 +424,7 @@ async function validateItinerary(itinerary, destinationId) {
   for (let index = 0; index < itinerary.length; index += 1) {
     const item = itinerary[index];
 
-    if (!item || typeof item !== "object") {
+    if (!item || typeof item !== "object" || Array.isArray(item)) {
       return {
         valid: false,
         message: `Invalid itinerary item at position ${index + 1}`,
@@ -118,7 +449,7 @@ async function validateItinerary(itinerary, destinationId) {
 
     usedDays.add(day);
 
-    const title = String(item.title || "").trim();
+    const title = normalizeString(item.title);
 
     if (!title) {
       return {
@@ -127,14 +458,35 @@ async function validateItinerary(itinerary, destinationId) {
       };
     }
 
-    const description = String(item.description || "").trim();
+    if (title.length > 200) {
+      return {
+        valid: false,
+        message: `Itinerary title for Day ${day} cannot exceed 200 characters`,
+      };
+    }
+
+    const description = normalizeString(item.description);
+
+    if (description.length > 2000) {
+      return {
+        valid: false,
+        message: `Itinerary description for Day ${day} cannot exceed 2000 characters`,
+      };
+    }
+
+    if (item.places !== undefined && !Array.isArray(item.places)) {
+      return {
+        valid: false,
+        message: `Places for Day ${day} must be an array`,
+      };
+    }
 
     const rawPlaces = Array.isArray(item.places) ? item.places : [];
 
     const places = [];
 
     for (const placeId of rawPlaces) {
-      if (!mongoose.Types.ObjectId.isValid(placeId)) {
+      if (!mongoose.isValidObjectId(placeId)) {
         return {
           valid: false,
           message: `Invalid place ID: ${placeId}`,
@@ -213,13 +565,7 @@ export async function GET(request) {
     const admin = await requireAdmin(request);
 
     if (!admin) {
-      return NextResponse.json(
-        {
-          success: false,
-          message: "Unauthorized",
-        },
-        { status: 401 },
-      );
+      return errorResponse("Unauthorized. Admin access required.", 401);
     }
 
     await connectDB();
@@ -232,18 +578,13 @@ export async function GET(request) {
 
     return NextResponse.json({
       success: true,
+      count: packages.length,
       data: packages,
     });
   } catch (error) {
     console.error("GET packages error:", error);
 
-    return NextResponse.json(
-      {
-        success: false,
-        message: "Failed to fetch packages",
-      },
-      { status: 500 },
-    );
+    return errorResponse("Failed to fetch packages", 500);
   }
 }
 
@@ -252,27 +593,21 @@ export async function POST(request) {
     const admin = await requireAdmin(request);
 
     if (!admin) {
-      return NextResponse.json(
-        {
-          success: false,
-          message: "Unauthorized",
-        },
-        { status: 401 },
-      );
+      return errorResponse("Unauthorized. Admin access required.", 401);
     }
 
     await connectDB();
 
-    const body = await request.json();
+    let body;
 
-    if (!body || typeof body !== "object") {
-      return NextResponse.json(
-        {
-          success: false,
-          message: "Invalid request body",
-        },
-        { status: 400 },
-      );
+    try {
+      body = await request.json();
+    } catch {
+      return errorResponse("Request body must contain valid JSON", 400);
+    }
+
+    if (!body || typeof body !== "object" || Array.isArray(body)) {
+      return errorResponse("Invalid request body", 400);
     }
 
     const {
@@ -284,6 +619,7 @@ export async function POST(request) {
       duration,
       price,
       priceType,
+      currency,
       inclusions,
       exclusions,
       itinerary,
@@ -294,39 +630,14 @@ export async function POST(request) {
     } = body;
 
     /*
-     * Required fields
+     * Destination
      */
-    if (
-      !destination ||
-      !name ||
-      !slug ||
-      !description ||
-      !duration ||
-      price === undefined ||
-      price === null ||
-      !coverImage
-    ) {
-      return NextResponse.json(
-        {
-          success: false,
-          message:
-            "Destination, name, slug, description, duration, price and cover image are required",
-        },
-        { status: 400 },
-      );
+    if (!destination) {
+      return errorResponse("Destination is required", 400);
     }
 
-    /*
-     * Destination validation
-     */
-    if (!mongoose.Types.ObjectId.isValid(destination)) {
-      return NextResponse.json(
-        {
-          success: false,
-          message: "Invalid destination ID",
-        },
-        { status: 400 },
-      );
+    if (!mongoose.isValidObjectId(destination)) {
+      return errorResponse("Invalid destination ID", 400);
     }
 
     const destinationExists = await Destination.exists({
@@ -334,174 +645,176 @@ export async function POST(request) {
     });
 
     if (!destinationExists) {
-      return NextResponse.json(
-        {
-          success: false,
-          message: "Destination not found",
-        },
-        { status: 404 },
-      );
+      return errorResponse("Destination not found", 404);
     }
 
     /*
-     * Basic string normalization
+     * Name
      */
-    const normalizedName = String(name).trim();
+    const nameValidation = validateName(name);
 
-    const normalizedSlug = normalizeSlug(slug);
-
-    const normalizedDescription = String(description).trim();
-
-    const normalizedShortDescription = String(shortDescription || "").trim();
-
-    if (!normalizedName) {
-      return NextResponse.json(
-        {
-          success: false,
-          message: "Package name is required",
-        },
-        { status: 400 },
-      );
-    }
-
-    if (!normalizedSlug) {
-      return NextResponse.json(
-        {
-          success: false,
-          message: "Package slug is required",
-        },
-        { status: 400 },
-      );
-    }
-
-    if (!normalizedDescription) {
-      return NextResponse.json(
-        {
-          success: false,
-          message: "Package description is required",
-        },
-        { status: 400 },
-      );
+    if (!nameValidation.valid) {
+      return errorResponse(nameValidation.message, 400);
     }
 
     /*
-     * Price validation
+     * Slug
      */
-    const numericPrice = Number(price);
+    const slugValidation = validateSlug(slug);
 
-    if (!Number.isFinite(numericPrice) || numericPrice < 0) {
-      return NextResponse.json(
-        {
-          success: false,
-          message: "Price must be a valid non-negative number",
-        },
-        { status: 400 },
-      );
+    if (!slugValidation.valid) {
+      return errorResponse(slugValidation.message, 400);
     }
 
     /*
-     * Duration validation
+     * Description
      */
-    if (
-      !duration ||
-      typeof duration !== "object" ||
-      duration.days === undefined ||
-      duration.nights === undefined
-    ) {
-      return NextResponse.json(
-        {
-          success: false,
-          message: "Duration days and nights are required",
-        },
-        { status: 400 },
-      );
-    }
+    const descriptionValidation = validateDescription(description);
 
-    const days = Number(duration.days);
-    const nights = Number(duration.nights);
-
-    if (
-      !Number.isInteger(days) ||
-      days < 1 ||
-      !Number.isInteger(nights) ||
-      nights < 0
-    ) {
-      return NextResponse.json(
-        {
-          success: false,
-          message: "Duration values are invalid",
-        },
-        { status: 400 },
-      );
+    if (!descriptionValidation.valid) {
+      return errorResponse(descriptionValidation.message, 400);
     }
 
     /*
-     * Price type validation
+     * Short description
      */
-    const normalizedPriceType = String(priceType || "per-person").trim();
+    const shortDescriptionValidation =
+      validateShortDescription(shortDescription);
 
-    if (!ALLOWED_PRICE_TYPES.includes(normalizedPriceType)) {
-      return NextResponse.json(
-        {
-          success: false,
-          message: "Invalid price type",
-        },
-        { status: 400 },
-      );
+    if (!shortDescriptionValidation.valid) {
+      return errorResponse(shortDescriptionValidation.message, 400);
     }
 
     /*
-     * Cover image validation
-     *
-     * ImageSchema requires both url and publicId.
+     * Duration
      */
-    const normalizedCoverImage = normalizeImage(coverImage);
+    const durationValidation = validateDuration(duration);
 
-    if (!normalizedCoverImage) {
-      return NextResponse.json(
-        {
-          success: false,
-          message: "A valid cover image with URL and public ID is required",
-        },
-        { status: 400 },
-      );
+    if (!durationValidation.valid) {
+      return errorResponse(durationValidation.message, 400);
     }
 
     /*
-     * Gallery validation
+     * Price
      */
-    const normalizedGallery = normalizeGallery(gallery);
+    const priceValidation = validatePrice(price);
+
+    if (!priceValidation.valid) {
+      return errorResponse(priceValidation.message, 400);
+    }
+
+    /*
+     * Price type
+     */
+    const priceTypeValidation = validatePriceType(priceType || "per-person");
+
+    if (!priceTypeValidation.valid) {
+      return errorResponse(priceTypeValidation.message, 400);
+    }
+
+    /*
+     * Currency
+     */
+    const currencyValidation = validateCurrency(currency || "INR");
+
+    if (!currencyValidation.valid) {
+      return errorResponse(currencyValidation.message, 400);
+    }
+
+    /*
+     * Cover image
+     */
+    const coverImageValidation = validateImage(coverImage, "Cover image");
+
+    if (!coverImageValidation.valid) {
+      return errorResponse(coverImageValidation.message, 400);
+    }
+
+    /*
+     * Gallery
+     */
+    const galleryValidation = validateGallery(gallery || []);
+
+    if (!galleryValidation.valid) {
+      return errorResponse(galleryValidation.message, 400);
+    }
+
+    /*
+     * Inclusions
+     */
+    const inclusionsValidation = validateStringArray(
+      inclusions || [],
+      "Inclusions",
+      MAX_ARRAY_ITEMS,
+      200,
+    );
+
+    if (!inclusionsValidation.valid) {
+      return errorResponse(inclusionsValidation.message, 400);
+    }
+
+    /*
+     * Exclusions
+     */
+    const exclusionsValidation = validateStringArray(
+      exclusions || [],
+      "Exclusions",
+      MAX_ARRAY_ITEMS,
+      200,
+    );
+
+    if (!exclusionsValidation.valid) {
+      return errorResponse(exclusionsValidation.message, 400);
+    }
+
+    /*
+     * Boolean fields
+     */
+    const featuredValidation =
+      isFeatured === undefined
+        ? {
+            valid: true,
+            value: false,
+          }
+        : parseStrictBoolean(isFeatured);
+
+    if (!featuredValidation.valid) {
+      return errorResponse("isFeatured must be a boolean", 400);
+    }
+
+    const activeValidation =
+      isActive === undefined
+        ? {
+            valid: true,
+            value: true,
+          }
+        : parseStrictBoolean(isActive);
+
+    if (!activeValidation.valid) {
+      return errorResponse("isActive must be a boolean", 400);
+    }
 
     /*
      * Slug uniqueness
      */
     const existingPackage = await Package.exists({
-      slug: normalizedSlug,
+      slug: slugValidation.value,
     });
 
     if (existingPackage) {
-      return NextResponse.json(
-        {
-          success: false,
-          message: "Package slug already exists",
-        },
-        { status: 409 },
-      );
+      return errorResponse("Package slug already exists", 409);
     }
 
     /*
-     * Itinerary validation
+     * Itinerary
      */
-    const itineraryValidation = await validateItinerary(itinerary, destination);
+    const itineraryValidation = await validateItinerary(
+      itinerary || [],
+      destination,
+    );
 
     if (!itineraryValidation.valid) {
-      return NextResponse.json(
-        {
-          success: false,
-          message: itineraryValidation.message,
-        },
-        { status: 400 },
-      );
+      return errorResponse(itineraryValidation.message, 400);
     }
 
     /*
@@ -509,40 +822,38 @@ export async function POST(request) {
      */
     const createdPackage = await Package.create({
       destination,
-      name: normalizedName,
-      slug: normalizedSlug,
 
-      shortDescription: normalizedShortDescription,
+      name: nameValidation.value,
 
-      description: normalizedDescription,
+      slug: slugValidation.value,
 
-      duration: {
-        days,
-        nights,
-      },
+      shortDescription: shortDescriptionValidation.value,
 
-      price: numericPrice,
+      description: descriptionValidation.value,
 
-      priceType: normalizedPriceType,
+      duration: durationValidation.value,
 
-      inclusions: normalizeStringArray(inclusions),
+      price: priceValidation.value,
 
-      exclusions: normalizeStringArray(exclusions),
+      priceType: priceTypeValidation.value,
+
+      currency: currencyValidation.value,
+
+      inclusions: inclusionsValidation.value,
+
+      exclusions: exclusionsValidation.value,
 
       itinerary: itineraryValidation.itinerary,
 
-      coverImage: normalizedCoverImage,
+      coverImage: coverImageValidation.image,
 
-      gallery: normalizedGallery,
+      gallery: galleryValidation.gallery,
 
-      isFeatured: parseBoolean(isFeatured, false),
+      isFeatured: featuredValidation.value,
 
-      isActive: parseBoolean(isActive, true),
+      isActive: activeValidation.value,
     });
 
-    /*
-     * Return populated package
-     */
     const packageData = await populatePackage(createdPackage._id);
 
     return NextResponse.json(
@@ -557,21 +868,20 @@ export async function POST(request) {
     console.error("POST package error:", error);
 
     if (error?.code === 11000) {
-      return NextResponse.json(
-        {
-          success: false,
-          message: "Package slug already exists",
-        },
-        { status: 409 },
+      return errorResponse("Package slug already exists", 409);
+    }
+
+    if (error?.name === "ValidationError") {
+      const messages = Object.values(error.errors || {})
+        .map((item) => item.message)
+        .filter(Boolean);
+
+      return errorResponse(
+        messages.length > 0 ? messages.join(", ") : "Package validation failed",
+        400,
       );
     }
 
-    return NextResponse.json(
-      {
-        success: false,
-        message: error?.message || "Failed to create package",
-      },
-      { status: 500 },
-    );
+    return errorResponse("Failed to create package", 500);
   }
 }

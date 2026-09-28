@@ -15,6 +15,23 @@ import {
 import { adminApi } from "@/utils/adminApi";
 import { getToken } from "@/utils/api";
 
+const SUPPORTED_CURRENCIES = ["INR", "USD"];
+
+const PRICE_TYPES = ["per-person", "per-couple", "per-group"];
+
+const MAX_IMAGE_SIZE = 10 * 1024 * 1024;
+const MAX_GALLERY_IMAGES = 30;
+
+const NAME_REGEX = /^[\p{L}]+(?:[\s]+[\p{L}]+)*$/u;
+
+const SLUG_REGEX = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+
+const IMAGE_URL_REGEX = /^https?:\/\/[^\s]+$/i;
+
+/* -------------------------------------------------------------------------- */
+/* Helpers                                                                    */
+/* -------------------------------------------------------------------------- */
+
 function imageObject(image) {
   if (!image || typeof image !== "object") {
     return null;
@@ -24,6 +41,10 @@ function imageObject(image) {
   const publicId = String(image.publicId || "").trim();
 
   if (!url || !publicId) {
+    return null;
+  }
+
+  if (!IMAGE_URL_REGEX.test(url)) {
     return null;
   }
 
@@ -38,7 +59,7 @@ function normalizeGallery(gallery) {
     return [];
   }
 
-  return gallery.map(imageObject).filter(Boolean);
+  return gallery.map(imageObject).filter(Boolean).slice(0, MAX_GALLERY_IMAGES);
 }
 
 function getId(item) {
@@ -61,45 +82,105 @@ function getPlaceId(place) {
   return place || "";
 }
 
+function getResponseMessage(data, fallback) {
+  return data?.message || data?.error || fallback;
+}
+
+async function readJsonResponse(response) {
+  const text = await response.text();
+
+  if (!text) {
+    return {};
+  }
+
+  try {
+    return JSON.parse(text);
+  } catch {
+    return {};
+  }
+}
+
+function normalizeBoolean(value, fallback = false) {
+  if (typeof value === "boolean") {
+    return value;
+  }
+
+  if (value === "true" || value === 1 || value === "1") {
+    return true;
+  }
+
+  if (value === "false" || value === 0 || value === "0") {
+    return false;
+  }
+
+  return fallback;
+}
+
+function slugify(value) {
+  return String(value || "")
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9\s-]/g, "")
+    .replace(/\s+/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-+|-+$/g, "");
+}
+
+/* -------------------------------------------------------------------------- */
+/* Initial form                                                               */
+/* -------------------------------------------------------------------------- */
+
 const EMPTY_FORM = {
   destination: "",
   name: "",
   slug: "",
   shortDescription: "",
   description: "",
+
   days: "",
   nights: "",
+
   price: "",
+  currency: "INR",
   priceType: "per-person",
+
   inclusions: "",
   exclusions: "",
+
   coverImage: null,
   gallery: [],
+
   isFeatured: false,
   isActive: true,
 };
 
 function normalizeInitialForm(packageData) {
   if (!packageData) {
-    return EMPTY_FORM;
+    return {
+      ...EMPTY_FORM,
+      gallery: [],
+      coverImage: null,
+    };
   }
 
   return {
     destination: getDestinationId(packageData.destination),
 
-    name: packageData.name || "",
+    name: String(packageData.name || ""),
 
-    slug: packageData.slug || "",
+    slug: String(packageData.slug || ""),
 
-    shortDescription: packageData.shortDescription || "",
+    shortDescription: String(packageData.shortDescription || ""),
 
-    description: packageData.description || "",
+    description: String(packageData.description || ""),
 
     days: packageData.duration?.days ?? "",
 
     nights: packageData.duration?.nights ?? "",
 
     price: packageData.price ?? "",
+
+    currency: String(packageData.currency || "INR").toUpperCase(),
 
     priceType: packageData.priceType || "per-person",
 
@@ -115,9 +196,9 @@ function normalizeInitialForm(packageData) {
 
     gallery: normalizeGallery(packageData.gallery),
 
-    isFeatured: packageData.isFeatured ?? false,
+    isFeatured: normalizeBoolean(packageData.isFeatured, false),
 
-    isActive: packageData.isActive ?? true,
+    isActive: normalizeBoolean(packageData.isActive, true),
   };
 }
 
@@ -128,18 +209,29 @@ function normalizeInitialItinerary(packageData) {
 
   return packageData.itinerary
     .map((day, index) => ({
-      day: index + 1,
+      day:
+        Number.isInteger(Number(day?.day)) && Number(day.day) > 0
+          ? Number(day.day)
+          : index + 1,
 
-      title: day?.title || "",
+      title: String(day?.title || ""),
 
-      description: day?.description || "",
+      description: String(day?.description || ""),
 
       places: Array.isArray(day?.places)
         ? day.places.map(getPlaceId).filter(Boolean)
         : [],
     }))
-    .sort((a, b) => a.day - b.day);
+    .sort((a, b) => a.day - b.day)
+    .map((day, index) => ({
+      ...day,
+      day: index + 1,
+    }));
 }
+
+/* -------------------------------------------------------------------------- */
+/* Component                                                                  */
+/* -------------------------------------------------------------------------- */
 
 export default function PackageForm({
   initialData = null,
@@ -162,9 +254,13 @@ export default function PackageForm({
 
   const isViewMode = mode === "view" || readOnly;
 
-  const [destinations, setDestinations] = useState(initialDestinations || []);
+  const [destinations, setDestinations] = useState(
+    Array.isArray(initialDestinations) ? initialDestinations : [],
+  );
 
-  const [places, setPlaces] = useState(initialPlaces || []);
+  const [places, setPlaces] = useState(
+    Array.isArray(initialPlaces) ? initialPlaces : [],
+  );
 
   const [loadingOptions, setLoadingOptions] = useState(false);
 
@@ -185,26 +281,19 @@ export default function PackageForm({
   );
 
   /*
-   * Track images uploaded during this
-   * form session.
+   * Images uploaded during the current
+   * unsaved form session.
    *
-   * If the user removes a newly uploaded
-   * image before saving, we can safely
-   * remove it from Cloudinary immediately.
-   *
-   * Existing saved images are cleaned by
-   * the PUT API after successful update.
+   * These can safely be removed immediately
+   * if the user cancels or removes them.
    */
   const [sessionUploadedImages, setSessionUploadedImages] = useState([]);
 
-  /*
-   * Update form when the package changes.
-   */
-  useEffect(() => {
-    if (!packageData) {
-      return;
-    }
+  /* ------------------------------------------------------------------------ */
+  /* Reset form when editing another package                                 */
+  /* ------------------------------------------------------------------------ */
 
+  useEffect(() => {
     setFormData(normalizeInitialForm(packageData));
 
     setItinerary(normalizeInitialItinerary(packageData));
@@ -213,16 +302,19 @@ export default function PackageForm({
     setSessionUploadedImages([]);
   }, [packageData?._id]);
 
-  /*
-   * Load destinations and places.
-   */
+  /* ------------------------------------------------------------------------ */
+  /* Load destinations and places                                            */
+  /* ------------------------------------------------------------------------ */
+
   useEffect(() => {
     let cancelled = false;
 
     async function loadOptions() {
-      const hasDestinations = initialDestinations.length > 0;
+      const hasDestinations =
+        Array.isArray(initialDestinations) && initialDestinations.length > 0;
 
-      const hasPlaces = initialPlaces.length > 0;
+      const hasPlaces =
+        Array.isArray(initialPlaces) && initialPlaces.length > 0;
 
       if (hasDestinations && hasPlaces) {
         return;
@@ -249,9 +341,13 @@ export default function PackageForm({
           return;
         }
 
-        setDestinations(destinationResponse?.data || []);
+        setDestinations(
+          Array.isArray(destinationResponse?.data)
+            ? destinationResponse.data
+            : [],
+        );
 
-        setPlaces(placeResponse?.data || []);
+        setPlaces(Array.isArray(placeResponse?.data) ? placeResponse.data : []);
       } catch (loadError) {
         if (!cancelled) {
           setError(
@@ -272,34 +368,70 @@ export default function PackageForm({
     };
   }, []);
 
-  /*
-   * Only show places belonging to the
-   * currently selected destination.
-   */
+  /* ------------------------------------------------------------------------ */
+  /* Available places                                                         */
+  /* ------------------------------------------------------------------------ */
+
   const availablePlaces = useMemo(() => {
     if (!formData.destination) {
       return [];
     }
 
     return places.filter((place) => {
-      const placeDestination = place?.destination;
-
-      const placeDestinationId = getDestinationId(placeDestination);
+      const placeDestinationId = getDestinationId(place?.destination);
 
       return String(placeDestinationId) === String(formData.destination);
     });
   }, [places, formData.destination]);
 
-  function handleChange(event) {
-    const { name, value, type, checked } = event.target;
+  /* ------------------------------------------------------------------------ */
+  /* Change handlers                                                          */
+  /* ------------------------------------------------------------------------ */
 
+  function handleChange(event) {
     if (isViewMode) {
       return;
     }
 
+    const { name, value, type, checked } = event.target;
+
     setFormData((previous) => ({
       ...previous,
       [name]: type === "checkbox" ? checked : value,
+    }));
+  }
+
+  function handleNameChange(event) {
+    if (isViewMode) {
+      return;
+    }
+
+    const value = event.target.value;
+
+    /*
+     * Do not silently remove characters while
+     * typing. Validation happens on submit.
+     */
+    setFormData((previous) => ({
+      ...previous,
+      name: value,
+    }));
+  }
+
+  function handleSlugChange(event) {
+    if (isViewMode) {
+      return;
+    }
+
+    const value = event.target.value
+      .toLowerCase()
+      .replace(/\s+/g, "-")
+      .replace(/[^a-z0-9-]/g, "")
+      .replace(/-+/g, "-");
+
+    setFormData((previous) => ({
+      ...previous,
+      slug: value,
     }));
   }
 
@@ -316,8 +448,8 @@ export default function PackageForm({
     }));
 
     /*
-     * Remove places that don't belong to
-     * the newly selected destination.
+     * Remove places that do not belong
+     * to the newly selected destination.
      */
     setItinerary((previous) =>
       previous.map((day) => ({
@@ -339,18 +471,17 @@ export default function PackageForm({
       return;
     }
 
-    const slug = formData.name
-      .toLowerCase()
-      .trim()
-      .replace(/[^a-z0-9\s-]/g, "")
-      .replace(/\s+/g, "-")
-      .replace(/-+/g, "-");
+    const slug = slugify(formData.name);
 
     setFormData((previous) => ({
       ...previous,
       slug,
     }));
   }
+
+  /* ------------------------------------------------------------------------ */
+  /* Itinerary                                                                */
+  /* ------------------------------------------------------------------------ */
 
   function addDay() {
     if (isViewMode) {
@@ -423,11 +554,27 @@ export default function PackageForm({
     );
   }
 
+  /* ------------------------------------------------------------------------ */
+  /* Cloudinary                                                               */
+  /* ------------------------------------------------------------------------ */
+
   async function uploadImage(file, folder) {
     const token = getToken();
 
     if (!token) {
       throw new Error("Admin authentication token is missing.");
+    }
+
+    if (!file) {
+      throw new Error("Please select an image.");
+    }
+
+    if (!file.type?.startsWith("image/")) {
+      throw new Error("Only image files are allowed.");
+    }
+
+    if (file.size > MAX_IMAGE_SIZE) {
+      throw new Error("Image must be 10MB or smaller.");
     }
 
     const body = new FormData();
@@ -444,7 +591,7 @@ export default function PackageForm({
       body,
     });
 
-    const data = await response.json();
+    const data = await readJsonResponse(response);
 
     if (
       !response.ok ||
@@ -452,10 +599,16 @@ export default function PackageForm({
       !data?.image?.url ||
       !data?.image?.publicId
     ) {
-      throw new Error(data?.message || "Image upload failed.");
+      throw new Error(getResponseMessage(data, "Image upload failed."));
     }
 
-    return data.image;
+    const image = imageObject(data.image);
+
+    if (!image) {
+      throw new Error("Upload returned an invalid image.");
+    }
+
+    return image;
   }
 
   async function deleteCloudinaryImage(publicId) {
@@ -470,7 +623,11 @@ export default function PackageForm({
     }
 
     try {
-      await fetch("/api/upload/delete", {
+      /*
+       * This matches the delete route:
+       * POST /api/upload/delete
+       */
+      const response = await fetch("/api/upload/delete", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -480,17 +637,30 @@ export default function PackageForm({
           publicId,
         }),
       });
+
+      const data = await readJsonResponse(response);
+
+      if (!response.ok) {
+        console.error(
+          "Cloudinary delete failed:",
+          data?.message || "Unknown error",
+        );
+      }
     } catch (deleteError) {
       console.error("Cloudinary delete error:", deleteError);
     }
   }
 
   function registerSessionImage(image) {
-    if (!image?.publicId) {
+    const publicId = image?.publicId;
+
+    if (!publicId) {
       return;
     }
 
-    setSessionUploadedImages((previous) => [...previous, image.publicId]);
+    setSessionUploadedImages((previous) =>
+      previous.includes(publicId) ? previous : [...previous, publicId],
+    );
   }
 
   function unregisterSessionImage(publicId) {
@@ -502,6 +672,10 @@ export default function PackageForm({
       previous.filter((item) => item !== publicId),
     );
   }
+
+  /* ------------------------------------------------------------------------ */
+  /* Cover upload                                                             */
+  /* ------------------------------------------------------------------------ */
 
   async function handleCoverUpload(event) {
     if (isViewMode) {
@@ -516,7 +690,12 @@ export default function PackageForm({
       return;
     }
 
-    if (file.size > 10 * 1024 * 1024) {
+    if (!file.type?.startsWith("image/")) {
+      setError("Please select a valid image file.");
+      return;
+    }
+
+    if (file.size > MAX_IMAGE_SIZE) {
       setError("Cover image must be 10MB or smaller.");
       return;
     }
@@ -525,13 +704,13 @@ export default function PackageForm({
     setUploadingCover(true);
 
     try {
-      /*
-       * If the current cover was uploaded
-       * during this same unsaved session,
-       * remove it before replacing it.
-       */
       const previousImage = formData.coverImage;
 
+      /*
+       * If the existing cover was uploaded
+       * during this unsaved session, remove
+       * it before replacing it.
+       */
       if (
         previousImage?.publicId &&
         sessionUploadedImages.includes(previousImage.publicId)
@@ -556,6 +735,10 @@ export default function PackageForm({
     }
   }
 
+  /* ------------------------------------------------------------------------ */
+  /* Gallery upload                                                           */
+  /* ------------------------------------------------------------------------ */
+
   async function handleGalleryUpload(event) {
     if (isViewMode) {
       return;
@@ -569,7 +752,34 @@ export default function PackageForm({
       return;
     }
 
-    const oversizedFile = files.find((file) => file.size > 10 * 1024 * 1024);
+    const remainingSlots = MAX_GALLERY_IMAGES - formData.gallery.length;
+
+    if (remainingSlots <= 0) {
+      setError(
+        `You can upload a maximum of ${MAX_GALLERY_IMAGES} gallery images.`,
+      );
+      return;
+    }
+
+    const selectedFiles = files.slice(0, remainingSlots);
+
+    if (files.length > remainingSlots) {
+      setError(`Only ${remainingSlots} more gallery image(s) can be added.`);
+      return;
+    }
+
+    const invalidFile = selectedFiles.find(
+      (file) => !file.type?.startsWith("image/"),
+    );
+
+    if (invalidFile) {
+      setError("Only image files are allowed.");
+      return;
+    }
+
+    const oversizedFile = selectedFiles.find(
+      (file) => file.size > MAX_IMAGE_SIZE,
+    );
 
     if (oversizedFile) {
       setError("Each gallery image must be 10MB or smaller.");
@@ -579,10 +789,10 @@ export default function PackageForm({
     setError("");
     setUploadingGallery(true);
 
-    try {
-      const uploadedImages = [];
+    const uploadedImages = [];
 
-      for (const file of files) {
+    try {
+      for (const file of selectedFiles) {
         const uploaded = await uploadImage(file, "tourism/packages/gallery");
 
         uploadedImages.push(uploaded);
@@ -595,11 +805,26 @@ export default function PackageForm({
         gallery: [...previous.gallery, ...uploadedImages],
       }));
     } catch (uploadError) {
+      /*
+       * If one upload fails after previous
+       * files succeeded, clean the files
+       * created by this upload operation.
+       */
+      for (const image of uploadedImages) {
+        await deleteCloudinaryImage(image.publicId);
+
+        unregisterSessionImage(image.publicId);
+      }
+
       setError(uploadError?.message || "Failed to upload gallery images.");
     } finally {
       setUploadingGallery(false);
     }
   }
+
+  /* ------------------------------------------------------------------------ */
+  /* Image removal                                                            */
+  /* ------------------------------------------------------------------------ */
 
   async function removeCoverImage() {
     if (isViewMode) {
@@ -614,12 +839,9 @@ export default function PackageForm({
     }));
 
     /*
-     * Only immediately delete images that
-     * were uploaded during this unsaved
-     * form session.
-     *
-     * Existing saved images are handled
-     * by the PUT API after success.
+     * Existing saved images are not deleted
+     * here. The backend handles those after
+     * a successful update.
      */
     if (
       currentImage?.publicId &&
@@ -643,12 +865,203 @@ export default function PackageForm({
       gallery: previous.gallery.filter((_, itemIndex) => itemIndex !== index),
     }));
 
+    /*
+     * Only delete images created during
+     * the current unsaved session.
+     */
     if (image?.publicId && sessionUploadedImages.includes(image.publicId)) {
       await deleteCloudinaryImage(image.publicId);
 
       unregisterSessionImage(image.publicId);
     }
   }
+
+  /* ------------------------------------------------------------------------ */
+  /* Validation                                                               */
+  /* ------------------------------------------------------------------------ */
+
+  function validateForm() {
+    if (!formData.destination) {
+      return "Destination is required.";
+    }
+
+    if (!formData.name.trim()) {
+      return "Package name is required.";
+    }
+
+    const packageName = formData.name.trim();
+
+    if (packageName.length < 2) {
+      return "Package name must be at least 2 characters.";
+    }
+
+    if (packageName.length > 150) {
+      return "Package name cannot exceed 150 characters.";
+    }
+
+    if (!NAME_REGEX.test(packageName)) {
+      return "Package name can contain alphabets and spaces only.";
+    }
+
+    if (!formData.slug.trim()) {
+      return "Package slug is required.";
+    }
+
+    const slug = formData.slug.trim().toLowerCase();
+
+    if (slug.length > 150) {
+      return "Package slug cannot exceed 150 characters.";
+    }
+
+    if (!SLUG_REGEX.test(slug)) {
+      return "Slug can contain lowercase letters, numbers, and hyphens only.";
+    }
+
+    const shortDescription = formData.shortDescription.trim();
+
+    if (shortDescription.length > 500) {
+      return "Short description cannot exceed 500 characters.";
+    }
+
+    if (!formData.description.trim()) {
+      return "Description is required.";
+    }
+
+    const description = formData.description.trim();
+
+    if (description.length < 10) {
+      return "Description must be at least 10 characters.";
+    }
+
+    if (description.length > 5000) {
+      return "Description cannot exceed 5000 characters.";
+    }
+
+    if (formData.days === "" || formData.nights === "") {
+      return "Duration days and nights are required.";
+    }
+
+    const numericDays = Number(formData.days);
+
+    const numericNights = Number(formData.nights);
+
+    if (!Number.isInteger(numericDays) || numericDays < 1) {
+      return "Days must be a whole number greater than 0.";
+    }
+
+    if (!Number.isInteger(numericNights) || numericNights < 0) {
+      return "Nights must be a whole number of 0 or more.";
+    }
+
+    if (formData.price === "") {
+      return "Package price is required.";
+    }
+
+    const numericPrice = Number(formData.price);
+
+    if (!Number.isFinite(numericPrice) || numericPrice < 0) {
+      return "Package price must be a valid non-negative number.";
+    }
+
+    if (!SUPPORTED_CURRENCIES.includes(formData.currency)) {
+      return "Please select a valid currency.";
+    }
+
+    if (!PRICE_TYPES.includes(formData.priceType)) {
+      return "Please select a valid price type.";
+    }
+
+    if (!formData.coverImage?.url || !formData.coverImage?.publicId) {
+      return "Please upload a valid cover image.";
+    }
+
+    if (!IMAGE_URL_REGEX.test(formData.coverImage.url)) {
+      return "Cover image URL is invalid.";
+    }
+
+    if (formData.gallery.length > MAX_GALLERY_IMAGES) {
+      return `Gallery cannot contain more than ${MAX_GALLERY_IMAGES} images.`;
+    }
+
+    for (let index = 0; index < formData.gallery.length; index += 1) {
+      const image = formData.gallery[index];
+
+      if (!image?.url || !image?.publicId) {
+        return `Gallery image ${index + 1} is invalid.`;
+      }
+
+      if (!IMAGE_URL_REGEX.test(image.url)) {
+        return `Gallery image ${index + 1} has an invalid URL.`;
+      }
+    }
+
+    const inclusionItems = formData.inclusions
+      .split("\n")
+      .map((item) => item.trim())
+      .filter(Boolean);
+
+    const exclusionItems = formData.exclusions
+      .split("\n")
+      .map((item) => item.trim())
+      .filter(Boolean);
+
+    if (inclusionItems.length > 50) {
+      return "You can add a maximum of 50 inclusions.";
+    }
+
+    if (exclusionItems.length > 50) {
+      return "You can add a maximum of 50 exclusions.";
+    }
+
+    for (const item of inclusionItems) {
+      if (item.length > 200) {
+        return "Each inclusion cannot exceed 200 characters.";
+      }
+    }
+
+    for (const item of exclusionItems) {
+      if (item.length > 200) {
+        return "Each exclusion cannot exceed 200 characters.";
+      }
+    }
+
+    for (let index = 0; index < itinerary.length; index += 1) {
+      const day = itinerary[index];
+
+      if (!day.title.trim()) {
+        return `Please enter a title for Day ${index + 1}.`;
+      }
+
+      if (day.title.trim().length > 200) {
+        return `Day ${index + 1} title cannot exceed 200 characters.`;
+      }
+
+      if (day.description.trim().length > 2000) {
+        return `Day ${index + 1} description cannot exceed 2000 characters.`;
+      }
+
+      const invalidPlace = day.places.some(
+        (placeId) =>
+          !availablePlaces.some(
+            (place) => String(getPlaceId(place)) === String(placeId),
+          ),
+      );
+
+      if (invalidPlace) {
+        return `Day ${index + 1} contains an invalid place.`;
+      }
+    }
+
+    if (isEditMode && !id) {
+      return "Package ID is missing.";
+    }
+
+    return null;
+  }
+
+  /* ------------------------------------------------------------------------ */
+  /* Payload                                                                  */
+  /* ------------------------------------------------------------------------ */
 
   function buildPayload() {
     return {
@@ -670,6 +1083,8 @@ export default function PackageForm({
 
       price: Number(formData.price),
 
+      currency: formData.currency,
+
       priceType: formData.priceType,
 
       inclusions: formData.inclusions
@@ -684,20 +1099,27 @@ export default function PackageForm({
 
       itinerary: itinerary.map((day, index) => ({
         day: index + 1,
+
         title: day.title.trim(),
+
         description: day.description.trim(),
+
         places: day.places,
       })),
 
-      coverImage: formData.coverImage,
+      coverImage: imageObject(formData.coverImage),
 
-      gallery: formData.gallery,
+      gallery: normalizeGallery(formData.gallery),
 
-      isFeatured: Boolean(formData.isFeatured),
+      isFeatured: formData.isFeatured === true,
 
-      isActive: Boolean(formData.isActive),
+      isActive: formData.isActive === true,
     };
   }
+
+  /* ------------------------------------------------------------------------ */
+  /* Unsaved image cleanup                                                    */
+  /* ------------------------------------------------------------------------ */
 
   async function cleanupUnsavedImages() {
     if (sessionUploadedImages.length === 0) {
@@ -713,6 +1135,10 @@ export default function PackageForm({
     setSessionUploadedImages([]);
   }
 
+  /* ------------------------------------------------------------------------ */
+  /* Submit                                                                   */
+  /* ------------------------------------------------------------------------ */
+
   async function handleSubmit(event) {
     event.preventDefault();
 
@@ -722,78 +1148,10 @@ export default function PackageForm({
 
     setError("");
 
-    if (!formData.destination) {
-      setError("Destination is required.");
-      return;
-    }
+    const validationError = validateForm();
 
-    if (!formData.name.trim()) {
-      setError("Package name is required.");
-      return;
-    }
-
-    if (!formData.slug.trim()) {
-      setError("Package slug is required.");
-      return;
-    }
-
-    if (!formData.description.trim()) {
-      setError("Description is required.");
-      return;
-    }
-
-    if (formData.days === "" || formData.nights === "") {
-      setError("Duration days and nights are required.");
-      return;
-    }
-
-    const numericDays = Number(formData.days);
-
-    const numericNights = Number(formData.nights);
-
-    if (
-      !Number.isInteger(numericDays) ||
-      numericDays < 1 ||
-      !Number.isInteger(numericNights) ||
-      numericNights < 0
-    ) {
-      setError("Please enter valid duration values.");
-      return;
-    }
-
-    if (formData.price === "") {
-      setError("Package price is required.");
-      return;
-    }
-
-    const numericPrice = Number(formData.price);
-
-    if (!Number.isFinite(numericPrice) || numericPrice < 0) {
-      setError("Package price must be a valid non-negative number.");
-      return;
-    }
-
-    if (!formData.coverImage?.url || !formData.coverImage?.publicId) {
-      setError("Please upload a valid cover image.");
-      return;
-    }
-
-    if (
-      !["per-person", "per-couple", "per-group"].includes(formData.priceType)
-    ) {
-      setError("Please select a valid price type.");
-      return;
-    }
-
-    for (let index = 0; index < itinerary.length; index += 1) {
-      if (!itinerary[index].title.trim()) {
-        setError(`Please enter a title for Day ${index + 1}.`);
-        return;
-      }
-    }
-
-    if (isEditMode && !id) {
-      setError("Package ID is missing.");
+    if (validationError) {
+      setError(validationError);
       return;
     }
 
@@ -815,10 +1173,8 @@ export default function PackageForm({
       }
 
       /*
-       * Once the API succeeds, the backend
-       * owns the saved images. Clear the
-       * client-side session tracker so we
-       * don't accidentally delete them.
+       * Saved images are now owned by
+       * the backend/database lifecycle.
        */
       setSessionUploadedImages([]);
 
@@ -844,15 +1200,19 @@ export default function PackageForm({
     }
   }
 
+  /* ------------------------------------------------------------------------ */
+  /* Cancel                                                                   */
+  /* ------------------------------------------------------------------------ */
+
   async function handleCancel() {
     if (loading) {
       return;
     }
 
     /*
-     * If this is a create form and the user
-     * cancels after uploading images, clean
-     * those unsaved images.
+     * Only create-mode images are considered
+     * unsaved here. Existing edit-mode images
+     * must remain untouched.
      */
     if (mode === "create" && sessionUploadedImages.length > 0) {
       await cleanupUnsavedImages();
@@ -866,6 +1226,10 @@ export default function PackageForm({
     router.push("/admin/dashboard/packages");
   }
 
+  /* ------------------------------------------------------------------------ */
+  /* UI                                                                       */
+  /* ------------------------------------------------------------------------ */
+
   return (
     <form onSubmit={handleSubmit} className="space-y-6 pb-8">
       {error ? (
@@ -876,7 +1240,10 @@ export default function PackageForm({
         </div>
       ) : null}
 
-      {/* Package Information */}
+      {/* ------------------------------------------------------------------ */}
+      {/* Package Information                                                */}
+      {/* ------------------------------------------------------------------ */}
+
       <section className="rounded-2xl border border-emerald-100 bg-white p-5 shadow-sm sm:p-6">
         <div className="mb-6">
           <h2 className="text-lg font-bold text-slate-900">
@@ -915,8 +1282,9 @@ export default function PackageForm({
             <input
               name="name"
               value={formData.name}
-              onChange={handleChange}
+              onChange={handleNameChange}
               disabled={isViewMode}
+              maxLength={150}
               placeholder="Example: Kerala Highlights"
               className="input"
             />
@@ -927,8 +1295,9 @@ export default function PackageForm({
               <input
                 name="slug"
                 value={formData.slug}
-                onChange={handleChange}
+                onChange={handleSlugChange}
                 disabled={isViewMode}
+                maxLength={150}
                 placeholder="kerala-highlights"
                 className="input min-w-0 flex-1"
               />
@@ -965,6 +1334,7 @@ export default function PackageForm({
             <input
               type="number"
               min="1"
+              step="1"
               name="days"
               value={formData.days}
               onChange={handleChange}
@@ -978,6 +1348,7 @@ export default function PackageForm({
             <input
               type="number"
               min="0"
+              step="1"
               name="nights"
               value={formData.nights}
               onChange={handleChange}
@@ -1000,10 +1371,29 @@ export default function PackageForm({
               className="input"
             />
           </Field>
+
+          <Field label="Currency" required>
+            <select
+              name="currency"
+              value={formData.currency}
+              onChange={handleChange}
+              disabled={isViewMode}
+              className="input"
+            >
+              <option value="">Select currency</option>
+
+              <option value="INR">INR</option>
+
+              <option value="USD">USD</option>
+            </select>
+          </Field>
         </div>
       </section>
 
-      {/* Description */}
+      {/* ------------------------------------------------------------------ */}
+      {/* Description                                                         */}
+      {/* ------------------------------------------------------------------ */}
+
       <section className="rounded-2xl border border-emerald-100 bg-white p-5 shadow-sm sm:p-6">
         <div className="mb-5">
           <h2 className="text-lg font-bold text-slate-900">Description</h2>
@@ -1016,6 +1406,7 @@ export default function PackageForm({
               value={formData.shortDescription}
               onChange={handleChange}
               disabled={isViewMode}
+              maxLength={500}
               placeholder="A short summary of the package"
               className="input"
             />
@@ -1028,6 +1419,7 @@ export default function PackageForm({
               onChange={handleChange}
               disabled={isViewMode}
               rows={7}
+              maxLength={5000}
               placeholder="Describe the package..."
               className="input resize-y"
             />
@@ -1035,7 +1427,10 @@ export default function PackageForm({
         </div>
       </section>
 
-      {/* Inclusions / Exclusions */}
+      {/* ------------------------------------------------------------------ */}
+      {/* Inclusions / Exclusions                                             */}
+      {/* ------------------------------------------------------------------ */}
+
       <section className="rounded-2xl border border-emerald-100 bg-white p-5 shadow-sm sm:p-6">
         <div className="mb-5">
           <h2 className="text-lg font-bold text-slate-900">
@@ -1079,7 +1474,10 @@ Optional activities`}
         </div>
       </section>
 
-      {/* Itinerary */}
+      {/* ------------------------------------------------------------------ */}
+      {/* Itinerary                                                           */}
+      {/* ------------------------------------------------------------------ */}
+
       <section className="rounded-2xl border border-emerald-100 bg-white p-5 shadow-sm sm:p-6">
         <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div>
@@ -1145,6 +1543,7 @@ Optional activities`}
                       updateDay(index, "title", event.target.value)
                     }
                     disabled={isViewMode}
+                    maxLength={200}
                     placeholder="Day title"
                     className="input"
                   />
@@ -1155,8 +1554,9 @@ Optional activities`}
                       updateDay(index, "description", event.target.value)
                     }
                     disabled={isViewMode}
-                    placeholder="Describe the activities for this day"
                     rows={4}
+                    maxLength={2000}
+                    placeholder="Describe the activities for this day"
                     className="input resize-y"
                   />
 
@@ -1209,7 +1609,10 @@ Optional activities`}
         )}
       </section>
 
-      {/* Images */}
+      {/* ------------------------------------------------------------------ */}
+      {/* Images                                                              */}
+      {/* ------------------------------------------------------------------ */}
+
       <section className="rounded-2xl border border-emerald-100 bg-white p-5 shadow-sm sm:p-6">
         <div className="mb-6">
           <h2 className="text-lg font-bold text-slate-900">Package Images</h2>
@@ -1219,7 +1622,8 @@ Optional activities`}
           </p>
         </div>
 
-        {/* Cover */}
+        {/* Cover Image */}
+
         <div>
           <div className="mb-3">
             <label className="text-sm font-semibold text-slate-800">
@@ -1288,6 +1692,7 @@ Optional activities`}
         </div>
 
         {/* Gallery */}
+
         <div className="mt-8">
           <div className="mb-3 flex items-center justify-between gap-3">
             <label className="text-sm font-semibold text-slate-800">
@@ -1359,7 +1764,10 @@ Optional activities`}
         </div>
       </section>
 
-      {/* Status */}
+      {/* ------------------------------------------------------------------ */}
+      {/* Status                                                              */}
+      {/* ------------------------------------------------------------------ */}
+
       <section className="rounded-2xl border border-emerald-100 bg-white p-5 shadow-sm sm:p-6">
         <div className="mb-5">
           <h2 className="text-lg font-bold text-slate-900">Package Status</h2>
@@ -1418,7 +1826,10 @@ Optional activities`}
         </div>
       </section>
 
-      {/* Actions */}
+      {/* ------------------------------------------------------------------ */}
+      {/* Actions                                                             */}
+      {/* ------------------------------------------------------------------ */}
+
       <div className="flex flex-col-reverse gap-3 border-t border-slate-200 pt-6 sm:flex-row sm:justify-end">
         <button
           type="button"
@@ -1452,6 +1863,10 @@ Optional activities`}
     </form>
   );
 }
+
+/* -------------------------------------------------------------------------- */
+/* Field                                                                      */
+/* -------------------------------------------------------------------------- */
 
 function Field({ label, required = false, children }) {
   return (

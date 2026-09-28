@@ -2,43 +2,49 @@ import { NextResponse } from "next/server";
 import mongoose from "mongoose";
 
 import connectDB from "@/utils/mongodb";
-import { Destination, Package, Place } from "@/utils/schema";
+import {
+  Destination,
+  Package,
+  Place,
+  SUPPORTED_CURRENCIES,
+  nameRegex,
+  slugRegex,
+  urlRegex,
+} from "@/utils/schema";
 import { requireAdmin } from "@/utils/adminAuth";
 import cloudinary from "@/utils/cloudinary";
 
 const ALLOWED_PRICE_TYPES = ["per-person", "per-couple", "per-group"];
 
-function parseBoolean(value, defaultValue = false) {
-  if (value === undefined || value === null) {
-    return defaultValue;
-  }
+const MAX_GALLERY_IMAGES = 30;
+const MAX_ARRAY_ITEMS = 50;
+const MAX_ITINERARY_DAYS = 60;
 
-  if (typeof value === "boolean") {
-    return value;
-  }
+function errorResponse(message, status = 400) {
+  return NextResponse.json(
+    {
+      success: false,
+      message,
+    },
+    { status },
+  );
+}
 
-  if (typeof value === "string") {
-    const normalized = value.trim().toLowerCase();
+function normalizeString(value) {
+  return typeof value === "string" ? value.trim() : "";
+}
 
-    if (normalized === "true") {
-      return true;
-    }
-
-    if (normalized === "false") {
-      return false;
-    }
-  }
-
-  return Boolean(value);
+function normalizeSlug(value) {
+  return normalizeString(value).toLowerCase();
 }
 
 function normalizeImage(image) {
-  if (!image || typeof image !== "object") {
+  if (!image || typeof image !== "object" || Array.isArray(image)) {
     return null;
   }
 
-  const url = String(image.url || "").trim();
-  const publicId = String(image.publicId || "").trim();
+  const url = normalizeString(image.url);
+  const publicId = normalizeString(image.publicId);
 
   if (!url || !publicId) {
     return null;
@@ -50,64 +56,328 @@ function normalizeImage(image) {
   };
 }
 
-function normalizeGallery(gallery) {
+function validateImage(image, fieldName = "Image") {
+  const normalizedImage = normalizeImage(image);
+
+  if (!normalizedImage) {
+    return {
+      valid: false,
+      message: `${fieldName} must contain both URL and public ID`,
+    };
+  }
+
+  if (!urlRegex.test(normalizedImage.url)) {
+    return {
+      valid: false,
+      message: `${fieldName} URL must be a valid HTTP or HTTPS URL`,
+    };
+  }
+
+  return {
+    valid: true,
+    image: normalizedImage,
+  };
+}
+
+function validateGallery(gallery) {
   if (!Array.isArray(gallery)) {
-    return [];
+    return {
+      valid: false,
+      message: "Gallery must be an array",
+    };
   }
 
-  return gallery.map(normalizeImage).filter(Boolean);
+  if (gallery.length > MAX_GALLERY_IMAGES) {
+    return {
+      valid: false,
+      message: `Gallery cannot contain more than ${MAX_GALLERY_IMAGES} images`,
+    };
+  }
+
+  const normalizedGallery = [];
+
+  for (let index = 0; index < gallery.length; index += 1) {
+    const result = validateImage(gallery[index], `Gallery image ${index + 1}`);
+
+    if (!result.valid) {
+      return result;
+    }
+
+    normalizedGallery.push(result.image);
+  }
+
+  return {
+    valid: true,
+    gallery: normalizedGallery,
+  };
 }
 
-function normalizeStringArray(value) {
+function parseStrictBoolean(value) {
+  if (typeof value === "boolean") {
+    return {
+      valid: true,
+      value,
+    };
+  }
+
+  if (typeof value === "string") {
+    const normalized = value.trim().toLowerCase();
+
+    if (normalized === "true") {
+      return {
+        valid: true,
+        value: true,
+      };
+    }
+
+    if (normalized === "false") {
+      return {
+        valid: true,
+        value: false,
+      };
+    }
+  }
+
+  return {
+    valid: false,
+    message: "Value must be a boolean",
+  };
+}
+
+function validateName(value) {
+  const name = normalizeString(value);
+
+  if (!name) {
+    return {
+      valid: false,
+      message: "Package name is required",
+    };
+  }
+
+  if (name.length < 2 || name.length > 150) {
+    return {
+      valid: false,
+      message: "Package name must be between 2 and 150 characters",
+    };
+  }
+
+  if (!nameRegex.test(name)) {
+    return {
+      valid: false,
+      message: "Package name may contain alphabets and spaces only",
+    };
+  }
+
+  return {
+    valid: true,
+    value: name,
+  };
+}
+
+function validateSlug(value) {
+  const slug = normalizeSlug(value);
+
+  if (!slug) {
+    return {
+      valid: false,
+      message: "Package slug is required",
+    };
+  }
+
+  if (slug.length > 150) {
+    return {
+      valid: false,
+      message: "Package slug cannot exceed 150 characters",
+    };
+  }
+
+  if (!slugRegex.test(slug)) {
+    return {
+      valid: false,
+      message:
+        "Package slug may contain lowercase letters, numbers and hyphens only",
+    };
+  }
+
+  return {
+    valid: true,
+    value: slug,
+  };
+}
+
+function validateDescription(value) {
+  const description = normalizeString(value);
+
+  if (!description) {
+    return {
+      valid: false,
+      message: "Package description is required",
+    };
+  }
+
+  if (description.length < 10 || description.length > 5000) {
+    return {
+      valid: false,
+      message: "Package description must be between 10 and 5000 characters",
+    };
+  }
+
+  return {
+    valid: true,
+    value: description,
+  };
+}
+
+function validateShortDescription(value) {
+  const shortDescription = normalizeString(value);
+
+  if (shortDescription.length > 500) {
+    return {
+      valid: false,
+      message: "Short description cannot exceed 500 characters",
+    };
+  }
+
+  return {
+    valid: true,
+    value: shortDescription,
+  };
+}
+
+function validatePrice(value) {
+  const price = Number(value);
+
+  if (!Number.isFinite(price) || price < 0) {
+    return {
+      valid: false,
+      message: "Price must be a valid non-negative number",
+    };
+  }
+
+  return {
+    valid: true,
+    value: price,
+  };
+}
+
+function validateDuration(duration) {
+  if (!duration || typeof duration !== "object" || Array.isArray(duration)) {
+    return {
+      valid: false,
+      message: "Duration must contain days and nights",
+    };
+  }
+
+  const days = Number(duration.days);
+  const nights = Number(duration.nights);
+
+  if (
+    !Number.isInteger(days) ||
+    days < 1 ||
+    !Number.isInteger(nights) ||
+    nights < 0
+  ) {
+    return {
+      valid: false,
+      message:
+        "Duration days must be a whole number of at least 1 and nights must be a whole number of 0 or more",
+    };
+  }
+
+  if (days > 365 || nights > 365) {
+    return {
+      valid: false,
+      message: "Duration cannot exceed 365 days or nights",
+    };
+  }
+
+  return {
+    valid: true,
+    value: {
+      days,
+      nights,
+    },
+  };
+}
+
+function validatePriceType(value) {
+  const priceType = normalizeString(value);
+
+  if (!ALLOWED_PRICE_TYPES.includes(priceType)) {
+    return {
+      valid: false,
+      message: `Price type must be one of: ${ALLOWED_PRICE_TYPES.join(", ")}`,
+    };
+  }
+
+  return {
+    valid: true,
+    value: priceType,
+  };
+}
+
+function validateCurrency(value) {
+  const currency = normalizeString(value).toUpperCase();
+
+  if (!SUPPORTED_CURRENCIES.includes(currency)) {
+    return {
+      valid: false,
+      message: `Currency must be one of: ${SUPPORTED_CURRENCIES.join(", ")}`,
+    };
+  }
+
+  return {
+    valid: true,
+    value: currency,
+  };
+}
+
+function validateStringArray(
+  value,
+  fieldName,
+  maxItems = MAX_ARRAY_ITEMS,
+  maxItemLength = 200,
+) {
   if (!Array.isArray(value)) {
-    return [];
+    return {
+      valid: false,
+      message: `${fieldName} must be an array`,
+    };
   }
 
-  return value.map((item) => String(item || "").trim()).filter(Boolean);
-}
-
-function normalizeSlug(value) {
-  return String(value || "")
-    .trim()
-    .toLowerCase();
-}
-
-function getPackageImagePublicIds(packageData) {
-  const publicIds = [];
-
-  if (packageData?.coverImage?.publicId) {
-    publicIds.push(packageData.coverImage.publicId);
+  if (value.length > maxItems) {
+    return {
+      valid: false,
+      message: `${fieldName} cannot contain more than ${maxItems} items`,
+    };
   }
 
-  if (Array.isArray(packageData?.gallery)) {
-    for (const image of packageData.gallery) {
-      if (image?.publicId) {
-        publicIds.push(image.publicId);
-      }
-    }
-  }
+  const normalized = [];
 
-  return [...new Set(publicIds.filter(Boolean))];
-}
+  for (let index = 0; index < value.length; index += 1) {
+    const item = normalizeString(value[index]);
 
-async function deleteCloudinaryImages(publicIds) {
-  if (!Array.isArray(publicIds)) {
-    return;
-  }
-
-  for (const publicId of publicIds) {
-    if (!publicId) {
-      continue;
+    if (!item) {
+      return {
+        valid: false,
+        message: `${fieldName} item ${index + 1} cannot be empty`,
+      };
     }
 
-    try {
-      await cloudinary.uploader.destroy(publicId, {
-        resource_type: "image",
-      });
-    } catch (error) {
-      console.error(`Failed to delete Cloudinary image ${publicId}:`, error);
+    if (item.length > maxItemLength) {
+      return {
+        valid: false,
+        message: `${fieldName} item ${index + 1} cannot exceed ${maxItemLength} characters`,
+      };
     }
+
+    normalized.push(item);
   }
+
+  return {
+    valid: true,
+    value: normalized,
+  };
 }
 
 async function validateItinerary(itinerary, destinationId) {
@@ -125,6 +395,13 @@ async function validateItinerary(itinerary, destinationId) {
     };
   }
 
+  if (itinerary.length > MAX_ITINERARY_DAYS) {
+    return {
+      valid: false,
+      message: `Itinerary cannot contain more than ${MAX_ITINERARY_DAYS} days`,
+    };
+  }
+
   const normalized = [];
   const usedDays = new Set();
   const allPlaceIds = new Set();
@@ -132,7 +409,7 @@ async function validateItinerary(itinerary, destinationId) {
   for (let index = 0; index < itinerary.length; index += 1) {
     const item = itinerary[index];
 
-    if (!item || typeof item !== "object") {
+    if (!item || typeof item !== "object" || Array.isArray(item)) {
       return {
         valid: false,
         message: `Invalid itinerary item at position ${index + 1}`,
@@ -157,7 +434,7 @@ async function validateItinerary(itinerary, destinationId) {
 
     usedDays.add(day);
 
-    const title = String(item.title || "").trim();
+    const title = normalizeString(item.title);
 
     if (!title) {
       return {
@@ -166,14 +443,35 @@ async function validateItinerary(itinerary, destinationId) {
       };
     }
 
-    const description = String(item.description || "").trim();
+    if (title.length > 200) {
+      return {
+        valid: false,
+        message: `Itinerary title for Day ${day} cannot exceed 200 characters`,
+      };
+    }
+
+    const description = normalizeString(item.description);
+
+    if (description.length > 2000) {
+      return {
+        valid: false,
+        message: `Itinerary description for Day ${day} cannot exceed 2000 characters`,
+      };
+    }
+
+    if (item.places !== undefined && !Array.isArray(item.places)) {
+      return {
+        valid: false,
+        message: `Places for Day ${day} must be an array`,
+      };
+    }
 
     const rawPlaces = Array.isArray(item.places) ? item.places : [];
 
     const places = [];
 
     for (const placeId of rawPlaces) {
-      if (!mongoose.Types.ObjectId.isValid(placeId)) {
+      if (!mongoose.isValidObjectId(placeId)) {
         return {
           valid: false,
           message: `Invalid place ID: ${placeId}`,
@@ -184,7 +482,6 @@ async function validateItinerary(itinerary, destinationId) {
 
       if (!allPlaceIds.has(normalizedPlaceId)) {
         allPlaceIds.add(normalizedPlaceId);
-
         places.push(normalizedPlaceId);
       }
     }
@@ -197,9 +494,6 @@ async function validateItinerary(itinerary, destinationId) {
     });
   }
 
-  /*
-   * Verify all itinerary places.
-   */
   if (allPlaceIds.size > 0) {
     const placeIds = Array.from(allPlaceIds);
 
@@ -224,10 +518,6 @@ async function validateItinerary(itinerary, destinationId) {
       };
     }
 
-    /*
-     * Every itinerary place must belong
-     * to the selected package destination.
-     */
     const invalidDestinationPlace = places.find(
       (place) => String(place.destination) !== String(destinationId),
     );
@@ -248,6 +538,45 @@ async function validateItinerary(itinerary, destinationId) {
   };
 }
 
+function getPackageImagePublicIds(packageData) {
+  const publicIds = [];
+
+  if (packageData?.coverImage?.publicId) {
+    publicIds.push(String(packageData.coverImage.publicId));
+  }
+
+  if (Array.isArray(packageData?.gallery)) {
+    for (const image of packageData.gallery) {
+      if (image?.publicId) {
+        publicIds.push(String(image.publicId));
+      }
+    }
+  }
+
+  return [...new Set(publicIds.filter(Boolean))];
+}
+
+async function deleteCloudinaryImages(publicIds) {
+  if (!Array.isArray(publicIds)) {
+    return;
+  }
+
+  for (const publicId of publicIds) {
+    if (!publicId) {
+      continue;
+    }
+
+    try {
+      await cloudinary.uploader.destroy(publicId, {
+        resource_type: "image",
+        invalidate: true,
+      });
+    } catch (error) {
+      console.error(`Failed to delete Cloudinary image ${publicId}:`, error);
+    }
+  }
+}
+
 async function populatePackage(id) {
   return Package.findById(id)
     .populate("destination", "name slug")
@@ -260,25 +589,13 @@ export async function GET(request, { params }) {
     const admin = await requireAdmin(request);
 
     if (!admin) {
-      return NextResponse.json(
-        {
-          success: false,
-          message: "Unauthorized",
-        },
-        { status: 401 },
-      );
+      return errorResponse("Unauthorized. Admin access required.", 401);
     }
 
     const { id } = await params;
 
-    if (!mongoose.Types.ObjectId.isValid(id)) {
-      return NextResponse.json(
-        {
-          success: false,
-          message: "Invalid package ID",
-        },
-        { status: 400 },
-      );
+    if (!mongoose.isValidObjectId(id)) {
+      return errorResponse("Invalid package ID", 400);
     }
 
     await connectDB();
@@ -286,13 +603,7 @@ export async function GET(request, { params }) {
     const packageData = await populatePackage(id);
 
     if (!packageData) {
-      return NextResponse.json(
-        {
-          success: false,
-          message: "Package not found",
-        },
-        { status: 404 },
-      );
+      return errorResponse("Package not found", 404);
     }
 
     return NextResponse.json({
@@ -302,13 +613,7 @@ export async function GET(request, { params }) {
   } catch (error) {
     console.error("GET package error:", error);
 
-    return NextResponse.json(
-      {
-        success: false,
-        message: "Failed to fetch package",
-      },
-      { status: 500 },
-    );
+    return errorResponse("Failed to fetch package", 500);
   }
 }
 
@@ -317,56 +622,33 @@ export async function PUT(request, { params }) {
     const admin = await requireAdmin(request);
 
     if (!admin) {
-      return NextResponse.json(
-        {
-          success: false,
-          message: "Unauthorized",
-        },
-        { status: 401 },
-      );
+      return errorResponse("Unauthorized. Admin access required.", 401);
     }
 
     const { id } = await params;
 
-    if (!mongoose.Types.ObjectId.isValid(id)) {
-      return NextResponse.json(
-        {
-          success: false,
-          message: "Invalid package ID",
-        },
-        { status: 400 },
-      );
+    if (!mongoose.isValidObjectId(id)) {
+      return errorResponse("Invalid package ID", 400);
     }
 
     await connectDB();
 
-    /*
-     * Load the existing package first.
-     * We need the old images for Cloudinary
-     * cleanup after a successful update.
-     */
     const existingPackage = await Package.findById(id);
 
     if (!existingPackage) {
-      return NextResponse.json(
-        {
-          success: false,
-          message: "Package not found",
-        },
-        { status: 404 },
-      );
+      return errorResponse("Package not found", 404);
     }
 
-    const body = await request.json();
+    let body;
 
-    if (!body || typeof body !== "object") {
-      return NextResponse.json(
-        {
-          success: false,
-          message: "Invalid request body",
-        },
-        { status: 400 },
-      );
+    try {
+      body = await request.json();
+    } catch {
+      return errorResponse("Request body must contain valid JSON", 400);
+    }
+
+    if (!body || typeof body !== "object" || Array.isArray(body)) {
+      return errorResponse("Invalid request body", 400);
     }
 
     const allowedFields = [
@@ -378,6 +660,7 @@ export async function PUT(request, { params }) {
       "duration",
       "price",
       "priceType",
+      "currency",
       "inclusions",
       "exclusions",
       "itinerary",
@@ -395,31 +678,16 @@ export async function PUT(request, { params }) {
       }
     }
 
-    /*
-     * Nothing to update.
-     */
     if (Object.keys(updateData).length === 0) {
-      return NextResponse.json(
-        {
-          success: false,
-          message: "No valid fields provided for update",
-        },
-        { status: 400 },
-      );
+      return errorResponse("No valid fields provided for update", 400);
     }
 
     /*
      * Destination
      */
     if (Object.prototype.hasOwnProperty.call(updateData, "destination")) {
-      if (!mongoose.Types.ObjectId.isValid(updateData.destination)) {
-        return NextResponse.json(
-          {
-            success: false,
-            message: "Invalid destination ID",
-          },
-          { status: 400 },
-        );
+      if (!mongoose.isValidObjectId(updateData.destination)) {
+        return errorResponse("Invalid destination ID", 400);
       }
 
       const destinationExists = await Destination.exists({
@@ -427,13 +695,7 @@ export async function PUT(request, { params }) {
       });
 
       if (!destinationExists) {
-        return NextResponse.json(
-          {
-            success: false,
-            message: "Destination not found",
-          },
-          { status: 404 },
-        );
+        return errorResponse("Destination not found", 404);
       }
     }
 
@@ -443,251 +705,245 @@ export async function PUT(request, { params }) {
      * Name
      */
     if (Object.prototype.hasOwnProperty.call(updateData, "name")) {
-      updateData.name = String(updateData.name || "").trim();
+      const validation = validateName(updateData.name);
 
-      if (!updateData.name) {
-        return NextResponse.json(
-          {
-            success: false,
-            message: "Package name is required",
-          },
-          { status: 400 },
-        );
+      if (!validation.valid) {
+        return errorResponse(validation.message, 400);
       }
+
+      updateData.name = validation.value;
     }
 
     /*
      * Slug
      */
     if (Object.prototype.hasOwnProperty.call(updateData, "slug")) {
-      updateData.slug = normalizeSlug(updateData.slug);
+      const validation = validateSlug(updateData.slug);
 
-      if (!updateData.slug) {
-        return NextResponse.json(
-          {
-            success: false,
-            message: "Package slug is required",
-          },
-          { status: 400 },
-        );
+      if (!validation.valid) {
+        return errorResponse(validation.message, 400);
       }
 
       const duplicate = await Package.findOne({
-        slug: updateData.slug,
+        slug: validation.value,
         _id: {
           $ne: id,
         },
       });
 
       if (duplicate) {
-        return NextResponse.json(
-          {
-            success: false,
-            message: "Package slug already exists",
-          },
-          { status: 409 },
-        );
+        return errorResponse("Package slug already exists", 409);
       }
+
+      updateData.slug = validation.value;
     }
 
     /*
      * Short description
      */
     if (Object.prototype.hasOwnProperty.call(updateData, "shortDescription")) {
-      updateData.shortDescription = String(
-        updateData.shortDescription || "",
-      ).trim();
+      const validation = validateShortDescription(updateData.shortDescription);
+
+      if (!validation.valid) {
+        return errorResponse(validation.message, 400);
+      }
+
+      updateData.shortDescription = validation.value;
     }
 
     /*
      * Description
      */
     if (Object.prototype.hasOwnProperty.call(updateData, "description")) {
-      updateData.description = String(updateData.description || "").trim();
+      const validation = validateDescription(updateData.description);
 
-      if (!updateData.description) {
-        return NextResponse.json(
-          {
-            success: false,
-            message: "Package description is required",
-          },
-          { status: 400 },
-        );
+      if (!validation.valid) {
+        return errorResponse(validation.message, 400);
       }
+
+      updateData.description = validation.value;
     }
 
     /*
      * Duration
      */
     if (Object.prototype.hasOwnProperty.call(updateData, "duration")) {
-      if (!updateData.duration || typeof updateData.duration !== "object") {
-        return NextResponse.json(
-          {
-            success: false,
-            message: "Duration days and nights are required",
-          },
-          { status: 400 },
-        );
+      const validation = validateDuration(updateData.duration);
+
+      if (!validation.valid) {
+        return errorResponse(validation.message, 400);
       }
 
-      const days = Number(updateData.duration.days);
-
-      const nights = Number(updateData.duration.nights);
-
-      if (
-        !Number.isInteger(days) ||
-        days < 1 ||
-        !Number.isInteger(nights) ||
-        nights < 0
-      ) {
-        return NextResponse.json(
-          {
-            success: false,
-            message: "Duration values are invalid",
-          },
-          { status: 400 },
-        );
-      }
-
-      updateData.duration = {
-        days,
-        nights,
-      };
+      updateData.duration = validation.value;
     }
 
     /*
      * Price
      */
     if (Object.prototype.hasOwnProperty.call(updateData, "price")) {
-      const price = Number(updateData.price);
+      const validation = validatePrice(updateData.price);
 
-      if (!Number.isFinite(price) || price < 0) {
-        return NextResponse.json(
-          {
-            success: false,
-            message: "Price must be a valid non-negative number",
-          },
-          { status: 400 },
-        );
+      if (!validation.valid) {
+        return errorResponse(validation.message, 400);
       }
 
-      updateData.price = price;
+      updateData.price = validation.value;
     }
 
     /*
      * Price type
      */
     if (Object.prototype.hasOwnProperty.call(updateData, "priceType")) {
-      const priceType = String(updateData.priceType || "").trim();
+      const validation = validatePriceType(updateData.priceType);
 
-      if (!ALLOWED_PRICE_TYPES.includes(priceType)) {
-        return NextResponse.json(
-          {
-            success: false,
-            message: "Invalid price type",
-          },
-          { status: 400 },
-        );
+      if (!validation.valid) {
+        return errorResponse(validation.message, 400);
       }
 
-      updateData.priceType = priceType;
+      updateData.priceType = validation.value;
+    }
+
+    /*
+     * Currency
+     */
+    if (Object.prototype.hasOwnProperty.call(updateData, "currency")) {
+      const validation = validateCurrency(updateData.currency);
+
+      if (!validation.valid) {
+        return errorResponse(validation.message, 400);
+      }
+
+      updateData.currency = validation.value;
     }
 
     /*
      * Inclusions
      */
     if (Object.prototype.hasOwnProperty.call(updateData, "inclusions")) {
-      updateData.inclusions = normalizeStringArray(updateData.inclusions);
+      const validation = validateStringArray(
+        updateData.inclusions,
+        "Inclusions",
+        MAX_ARRAY_ITEMS,
+        200,
+      );
+
+      if (!validation.valid) {
+        return errorResponse(validation.message, 400);
+      }
+
+      updateData.inclusions = validation.value;
     }
 
     /*
      * Exclusions
      */
     if (Object.prototype.hasOwnProperty.call(updateData, "exclusions")) {
-      updateData.exclusions = normalizeStringArray(updateData.exclusions);
+      const validation = validateStringArray(
+        updateData.exclusions,
+        "Exclusions",
+        MAX_ARRAY_ITEMS,
+        200,
+      );
+
+      if (!validation.valid) {
+        return errorResponse(validation.message, 400);
+      }
+
+      updateData.exclusions = validation.value;
     }
 
     /*
      * Itinerary
+     *
+     * If destination changes but itinerary was
+     * not explicitly supplied, validate the
+     * existing itinerary against the new destination.
      */
     if (Object.prototype.hasOwnProperty.call(updateData, "itinerary")) {
-      const itineraryValidation = await validateItinerary(
+      const validation = await validateItinerary(
         updateData.itinerary,
         destinationId,
       );
 
-      if (!itineraryValidation.valid) {
-        return NextResponse.json(
-          {
-            success: false,
-            message: itineraryValidation.message,
-          },
-          { status: 400 },
-        );
+      if (!validation.valid) {
+        return errorResponse(validation.message, 400);
       }
 
-      updateData.itinerary = itineraryValidation.itinerary;
+      updateData.itinerary = validation.itinerary;
+    } else if (
+      Object.prototype.hasOwnProperty.call(updateData, "destination") &&
+      Array.isArray(existingPackage.itinerary) &&
+      existingPackage.itinerary.length > 0
+    ) {
+      const validation = await validateItinerary(
+        existingPackage.itinerary,
+        destinationId,
+      );
+
+      if (!validation.valid) {
+        return errorResponse(
+          "The selected destination does not contain all existing itinerary places. Update the itinerary before changing destination.",
+          400,
+        );
+      }
     }
 
     /*
      * Cover image
      */
     if (Object.prototype.hasOwnProperty.call(updateData, "coverImage")) {
-      const normalizedCoverImage = normalizeImage(updateData.coverImage);
+      const validation = validateImage(updateData.coverImage, "Cover image");
 
-      if (!normalizedCoverImage) {
-        return NextResponse.json(
-          {
-            success: false,
-            message: "A valid cover image with URL and public ID is required",
-          },
-          { status: 400 },
-        );
+      if (!validation.valid) {
+        return errorResponse(validation.message, 400);
       }
 
-      updateData.coverImage = normalizedCoverImage;
+      updateData.coverImage = validation.image;
     }
 
     /*
      * Gallery
      */
     if (Object.prototype.hasOwnProperty.call(updateData, "gallery")) {
-      updateData.gallery = normalizeGallery(updateData.gallery);
+      const validation = validateGallery(updateData.gallery);
+
+      if (!validation.valid) {
+        return errorResponse(validation.message, 400);
+      }
+
+      updateData.gallery = validation.gallery;
     }
 
     /*
      * Featured
      */
     if (Object.prototype.hasOwnProperty.call(updateData, "isFeatured")) {
-      updateData.isFeatured = parseBoolean(
-        updateData.isFeatured,
-        existingPackage.isFeatured,
-      );
+      const validation = parseStrictBoolean(updateData.isFeatured);
+
+      if (!validation.valid) {
+        return errorResponse("isFeatured must be a boolean", 400);
+      }
+
+      updateData.isFeatured = validation.value;
     }
 
     /*
      * Active
      */
     if (Object.prototype.hasOwnProperty.call(updateData, "isActive")) {
-      updateData.isActive = parseBoolean(
-        updateData.isActive,
-        existingPackage.isActive,
-      );
+      const validation = parseStrictBoolean(updateData.isActive);
+
+      if (!validation.valid) {
+        return errorResponse("isActive must be a boolean", 400);
+      }
+
+      updateData.isActive = validation.value;
     }
 
     /*
-     * Keep track of old Cloudinary images
-     * before changing the database.
+     * Save old Cloudinary references.
      */
-    const oldCoverPublicId = existingPackage.coverImage?.publicId || "";
-
-    const oldGalleryPublicIds = Array.isArray(existingPackage.gallery)
-      ? existingPackage.gallery.map((image) => image?.publicId).filter(Boolean)
-      : [];
-
-    const oldPublicIds = [oldCoverPublicId, ...oldGalleryPublicIds].filter(
-      Boolean,
-    );
+    const oldPublicIds = getPackageImagePublicIds(existingPackage);
 
     /*
      * Update MongoDB.
@@ -698,18 +954,12 @@ export async function PUT(request, { params }) {
     });
 
     if (!updatedPackage) {
-      return NextResponse.json(
-        {
-          success: false,
-          message: "Package not found",
-        },
-        { status: 404 },
-      );
+      return errorResponse("Package not found", 404);
     }
 
     /*
-     * Find images that are no longer referenced
-     * by the updated package.
+     * Determine which images are still
+     * referenced after the update.
      */
     const newPublicIds = getPackageImagePublicIds(updatedPackage);
 
@@ -718,16 +968,12 @@ export async function PUT(request, { params }) {
     );
 
     /*
-     * Cloudinary cleanup is best effort.
-     * MongoDB update has already succeeded.
+     * Best-effort Cloudinary cleanup.
      */
     if (removedPublicIds.length > 0) {
       await deleteCloudinaryImages(removedPublicIds);
     }
 
-    /*
-     * Return populated package.
-     */
     const packageData = await populatePackage(id);
 
     return NextResponse.json({
@@ -739,22 +985,94 @@ export async function PUT(request, { params }) {
     console.error("PUT package error:", error);
 
     if (error?.code === 11000) {
-      return NextResponse.json(
-        {
-          success: false,
-          message: "Package slug already exists",
-        },
-        { status: 409 },
+      return errorResponse("Package slug already exists", 409);
+    }
+
+    if (error?.name === "ValidationError") {
+      const messages = Object.values(error.errors || {})
+        .map((item) => item.message)
+        .filter(Boolean);
+
+      return errorResponse(
+        messages.length > 0 ? messages.join(", ") : "Package validation failed",
+        400,
       );
     }
 
-    return NextResponse.json(
-      {
-        success: false,
-        message: error?.message || "Failed to update package",
+    return errorResponse("Failed to update package", 500);
+  }
+}
+
+/*
+ * Separate active/inactive status update.
+ */
+export async function PATCH(request, { params }) {
+  try {
+    const admin = await requireAdmin(request);
+
+    if (!admin) {
+      return errorResponse("Unauthorized. Admin access required.", 401);
+    }
+
+    const { id } = await params;
+
+    if (!mongoose.isValidObjectId(id)) {
+      return errorResponse("Invalid package ID", 400);
+    }
+
+    await connectDB();
+
+    const packageData = await Package.findById(id);
+
+    if (!packageData) {
+      return errorResponse("Package not found", 404);
+    }
+
+    let body;
+
+    try {
+      body = await request.json();
+    } catch {
+      return errorResponse("Request body must contain valid JSON", 400);
+    }
+
+    if (!body || typeof body !== "object" || Array.isArray(body)) {
+      return errorResponse("Invalid request body", 400);
+    }
+
+    if (typeof body.isActive !== "boolean") {
+      return errorResponse("isActive must be a boolean", 400);
+    }
+
+    packageData.isActive = body.isActive;
+
+    await packageData.save();
+
+    return NextResponse.json({
+      success: true,
+      message: body.isActive
+        ? "Package activated successfully"
+        : "Package deactivated successfully",
+      data: {
+        _id: packageData._id,
+        isActive: packageData.isActive,
       },
-      { status: 500 },
-    );
+    });
+  } catch (error) {
+    console.error("PATCH package status error:", error);
+
+    if (error?.name === "ValidationError") {
+      const messages = Object.values(error.errors || {})
+        .map((item) => item.message)
+        .filter(Boolean);
+
+      return errorResponse(
+        messages.length > 0 ? messages.join(", ") : "Package validation failed",
+        400,
+      );
+    }
+
+    return errorResponse("Failed to update package status", 500);
   }
 }
 
@@ -763,55 +1081,36 @@ export async function DELETE(request, { params }) {
     const admin = await requireAdmin(request);
 
     if (!admin) {
-      return NextResponse.json(
-        {
-          success: false,
-          message: "Unauthorized",
-        },
-        { status: 401 },
-      );
+      return errorResponse("Unauthorized. Admin access required.", 401);
     }
 
     const { id } = await params;
 
-    if (!mongoose.Types.ObjectId.isValid(id)) {
-      return NextResponse.json(
-        {
-          success: false,
-          message: "Invalid package ID",
-        },
-        { status: 400 },
-      );
+    if (!mongoose.isValidObjectId(id)) {
+      return errorResponse("Invalid package ID", 400);
     }
 
     await connectDB();
 
     /*
-     * Load package before deleting so we
-     * can collect Cloudinary public IDs.
+     * Load the package before deletion
+     * so Cloudinary IDs are available.
      */
     const packageData = await Package.findById(id);
 
     if (!packageData) {
-      return NextResponse.json(
-        {
-          success: false,
-          message: "Package not found",
-        },
-        { status: 404 },
-      );
+      return errorResponse("Package not found", 404);
     }
 
     const publicIds = getPackageImagePublicIds(packageData);
 
     /*
-     * Permanently delete from MongoDB.
+     * Permanently delete MongoDB record.
      */
     await Package.findByIdAndDelete(id);
 
     /*
-     * Permanently remove associated
-     * Cloudinary images.
+     * Permanently remove Cloudinary images.
      */
     if (publicIds.length > 0) {
       await deleteCloudinaryImages(publicIds);
@@ -824,12 +1123,6 @@ export async function DELETE(request, { params }) {
   } catch (error) {
     console.error("DELETE package error:", error);
 
-    return NextResponse.json(
-      {
-        success: false,
-        message: error?.message || "Failed to delete package",
-      },
-      { status: 500 },
-    );
+    return errorResponse("Failed to delete package", 500);
   }
 }

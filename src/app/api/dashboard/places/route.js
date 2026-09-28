@@ -2,43 +2,102 @@ import { NextResponse } from "next/server";
 import mongoose from "mongoose";
 
 import connectDB from "@/utils/mongodb";
-import { Destination, Place } from "@/utils/schema";
+import {
+  Destination,
+  Place,
+  SUPPORTED_CURRENCIES,
+  nameRegex,
+  slugRegex,
+  urlRegex,
+} from "@/utils/schema";
 import { requireAdmin } from "@/utils/adminAuth";
 
 /* ================================================================
    HELPERS
 ================================================================ */
 
-function normalizeImage(image) {
-  if (!image) return null;
+function errorResponse(message, status = 400) {
+  return NextResponse.json(
+    {
+      success: false,
+      message,
+    },
+    { status },
+  );
+}
 
-  if (typeof image === "string") {
-    return {
-      url: image.trim(),
-      publicId: "",
-    };
+function normalizeString(value) {
+  if (typeof value !== "string") {
+    return "";
   }
 
-  if (
-    typeof image === "object" &&
-    typeof image.url === "string" &&
-    image.url.trim()
-  ) {
-    return {
-      url: image.url.trim(),
-      publicId: typeof image.publicId === "string" ? image.publicId.trim() : "",
-    };
+  return value.trim();
+}
+
+function normalizeImage(image) {
+  if (!image || typeof image !== "object") {
+    return null;
+  }
+
+  return {
+    url: normalizeString(image.url),
+    publicId: normalizeString(image.publicId),
+  };
+}
+
+function validateImage(image, fieldName = "Image") {
+  if (!image || typeof image !== "object") {
+    return `${fieldName} is required.`;
+  }
+
+  const url = normalizeString(image.url);
+  const publicId = normalizeString(image.publicId);
+
+  if (!url) {
+    return `${fieldName} URL is required.`;
+  }
+
+  if (!urlRegex.test(url)) {
+    return `${fieldName} URL must be a valid HTTP or HTTPS URL.`;
+  }
+
+  if (!publicId) {
+    return `${fieldName} must contain a valid Cloudinary public ID.`;
   }
 
   return null;
 }
 
 function normalizeGallery(gallery) {
-  if (!Array.isArray(gallery)) {
+  if (gallery === undefined) {
     return [];
   }
 
-  return gallery.map((image) => normalizeImage(image)).filter(Boolean);
+  if (!Array.isArray(gallery)) {
+    return null;
+  }
+
+  return gallery.map((image) => normalizeImage(image));
+}
+
+function validateGallery(gallery) {
+  if (gallery === undefined) {
+    return null;
+  }
+
+  if (!Array.isArray(gallery)) {
+    return "Gallery must be an array.";
+  }
+
+  for (let index = 0; index < gallery.length; index += 1) {
+    const error = validateImage(gallery[index], `Gallery image ${index + 1}`);
+
+    if (error) {
+      return error;
+    }
+  }
+
+  return null;
 }
 
 function normalizeNumber(value) {
@@ -55,13 +114,35 @@ function normalizeNumber(value) {
   return number;
 }
 
+function validateCoordinate(value, min, max, fieldName) {
+  if (value === undefined || value === null || value === "") {
+    return null;
+  }
+
+  const number = Number(value);
+
+  if (!Number.isFinite(number)) {
+    return `${fieldName} must be a valid number.`;
+  }
+
+  if (number < min || number > max) {
+    return `${fieldName} must be between ${min} and ${max}.`;
+  }
+
+  return null;
+}
+
 function normalizeEntryFee(entryFee) {
-  if (!entryFee || typeof entryFee !== "object") {
+  if (entryFee === undefined || entryFee === null || entryFee === "") {
     return {
       adult: 0,
       child: 0,
       foreigner: 0,
     };
+  }
+
+  if (typeof entryFee !== "object" || Array.isArray(entryFee)) {
+    return null;
   }
 
   const adult = normalizeNumber(entryFee.adult);
@@ -87,8 +168,17 @@ function normalizeEntryFee(entryFee) {
   };
 }
 
+function validateBoolean(value, fieldName) {
+  if (typeof value !== "boolean") {
+    return `${fieldName} must be true or false.`;
+  }
+
+  return null;
+}
+
 /* ================================================================
    GET ALL PLACES
+   GET /api/dashboard/places
 ================================================================ */
 
 export async function GET(request) {
@@ -96,13 +186,7 @@ export async function GET(request) {
     const admin = await requireAdmin(request);
 
     if (!admin) {
-      return NextResponse.json(
-        {
-          success: false,
-          message: "Unauthorized",
-        },
-        { status: 401 },
-      );
+      return errorResponse("Unauthorized. Admin access required.", 401);
     }
 
     await connectDB();
@@ -112,25 +196,24 @@ export async function GET(request) {
       .sort({ createdAt: -1 })
       .lean();
 
-    return NextResponse.json({
-      success: true,
-      data: places,
-    });
+    return NextResponse.json(
+      {
+        success: true,
+        count: places.length,
+        data: places,
+      },
+      { status: 200 },
+    );
   } catch (error) {
     console.error("GET places error:", error);
 
-    return NextResponse.json(
-      {
-        success: false,
-        message: "Failed to fetch places",
-      },
-      { status: 500 },
-    );
+    return errorResponse("Failed to fetch places.", 500);
   }
 }
 
 /* ================================================================
    CREATE PLACE
+   POST /api/dashboard/places
 ================================================================ */
 
 export async function POST(request) {
@@ -138,75 +221,74 @@ export async function POST(request) {
     const admin = await requireAdmin(request);
 
     if (!admin) {
-      return NextResponse.json(
-        {
-          success: false,
-          message: "Unauthorized",
-        },
-        { status: 401 },
-      );
+      return errorResponse("Unauthorized. Admin access required.", 401);
     }
 
     await connectDB();
 
-    const body = await request.json();
+    let body;
 
-    const {
-      destination,
-      name,
-      slug,
-      category,
-      description,
-      shortDescription,
-      entryFee,
-      openingTime,
-      closingTime,
-      closedOn,
-      bestTimeToVisit,
-      visitDuration,
-      address,
-      latitude,
-      longitude,
-      coverImage,
-      gallery,
-      isFeatured,
-      isActive,
-    } = body;
+    try {
+      body = await request.json();
+    } catch {
+      return errorResponse("Invalid JSON request body.");
+    }
+
+    const destination = normalizeString(body.destination);
+    const name = normalizeString(body.name);
+    const slug = normalizeString(body.slug).toLowerCase();
+    const category = normalizeString(body.category);
+    const description = normalizeString(body.description);
+    const shortDescription = normalizeString(body.shortDescription);
+
+    const openingTime = normalizeString(body.openingTime);
+
+    const closingTime = normalizeString(body.closingTime);
+
+    const closedOn = normalizeString(body.closedOn);
+
+    const bestTimeToVisit = normalizeString(body.bestTimeToVisit);
+
+    const visitDuration = normalizeString(body.visitDuration);
+
+    const address = normalizeString(body.address);
+
+    const currency = normalizeString(body.currency).toUpperCase();
 
     /* ------------------------------------------------------------
        REQUIRED FIELDS
     ------------------------------------------------------------ */
 
-    if (
-      !destination ||
-      !name ||
-      !slug ||
-      !category ||
-      !description ||
-      !coverImage
-    ) {
-      return NextResponse.json(
-        {
-          success: false,
-          message:
-            "Destination, name, slug, category, description and cover image are required",
-        },
-        { status: 400 },
-      );
+    if (!destination) {
+      return errorResponse("Destination is required.");
+    }
+
+    if (!name) {
+      return errorResponse("Place name is required.");
+    }
+
+    if (!slug) {
+      return errorResponse("Place slug is required.");
+    }
+
+    if (!category) {
+      return errorResponse("Place category is required.");
+    }
+
+    if (!description) {
+      return errorResponse("Place description is required.");
+    }
+
+    if (!body.coverImage) {
+      return errorResponse("Cover image is required.");
     }
 
     /* ------------------------------------------------------------
        DESTINATION VALIDATION
     ------------------------------------------------------------ */
 
-    if (!mongoose.Types.ObjectId.isValid(destination)) {
-      return NextResponse.json(
-        {
-          success: false,
-          message: "Invalid destination ID",
-        },
-        { status: 400 },
-      );
+    if (!mongoose.isValidObjectId(destination)) {
+      return errorResponse("Invalid destination ID.");
     }
 
     const destinationExists = await Destination.exists({
@@ -214,156 +296,212 @@ export async function POST(request) {
     });
 
     if (!destinationExists) {
-      return NextResponse.json(
-        {
-          success: false,
-          message: "Destination not found",
-        },
-        { status: 404 },
-      );
+      return errorResponse("Destination not found.", 404);
     }
 
     /* ------------------------------------------------------------
-       NAME
+       NAME VALIDATION
     ------------------------------------------------------------ */
 
-    const normalizedName = String(name).trim();
+    if (!nameRegex.test(name)) {
+      return errorResponse("Place name can contain alphabets and spaces only.");
+    }
 
-    if (!normalizedName) {
-      return NextResponse.json(
-        {
-          success: false,
-          message: "Place name is required",
-        },
-        { status: 400 },
-      );
+    if (name.length < 2 || name.length > 150) {
+      return errorResponse("Place name must be between 2 and 150 characters.");
     }
 
     /* ------------------------------------------------------------
-       SLUG
+       SLUG VALIDATION
     ------------------------------------------------------------ */
 
-    const normalizedSlug = String(slug).trim().toLowerCase();
-
-    if (!normalizedSlug) {
-      return NextResponse.json(
-        {
-          success: false,
-          message: "Place slug is required",
-        },
-        { status: 400 },
+    if (!slugRegex.test(slug)) {
+      return errorResponse(
+        "Slug can contain lowercase letters, numbers, and hyphens only.",
       );
     }
 
-    const existingPlace = await Place.findOne({
-      slug: normalizedSlug,
-    });
+    if (slug.length > 150) {
+      return errorResponse("Slug cannot exceed 150 characters.");
+    }
 
-    if (existingPlace) {
-      return NextResponse.json(
-        {
-          success: false,
-          message: "Place slug already exists",
-        },
-        { status: 409 },
-      );
+    /* ------------------------------------------------------------
+       CATEGORY
+    ------------------------------------------------------------ */
+
+    const allowedCategories = [
+      "historical",
+      "beach",
+      "temple",
+      "museum",
+      "waterfall",
+      "hill-station",
+      "wildlife",
+      "adventure",
+      "park",
+      "lake",
+      "viewpoint",
+      "other",
+    ];
+
+    if (!allowedCategories.includes(category)) {
+      return errorResponse("Invalid place category.");
     }
 
     /* ------------------------------------------------------------
        DESCRIPTION
     ------------------------------------------------------------ */
 
-    const normalizedDescription = String(description).trim();
-
-    if (!normalizedDescription) {
-      return NextResponse.json(
-        {
-          success: false,
-          message: "Place description is required",
-        },
-        { status: 400 },
+    if (description.length < 10 || description.length > 5000) {
+      return errorResponse(
+        "Description must be between 10 and 5000 characters.",
       );
+    }
+
+    if (shortDescription.length > 500) {
+      return errorResponse("Short description cannot exceed 500 characters.");
+    }
+
+    if (openingTime.length > 50) {
+      return errorResponse("Opening time cannot exceed 50 characters.");
+    }
+
+    if (closingTime.length > 50) {
+      return errorResponse("Closing time cannot exceed 50 characters.");
+    }
+
+    if (closedOn.length > 100) {
+      return errorResponse("Closed on cannot exceed 100 characters.");
+    }
+
+    if (bestTimeToVisit.length > 200) {
+      return errorResponse("Best time to visit cannot exceed 200 characters.");
+    }
+
+    if (visitDuration.length > 100) {
+      return errorResponse("Visit duration cannot exceed 100 characters.");
+    }
+
+    if (address.length > 500) {
+      return errorResponse("Address cannot exceed 500 characters.");
+    }
+
+    /* ------------------------------------------------------------
+       CURRENCY
+    ------------------------------------------------------------ */
+
+    if (!SUPPORTED_CURRENCIES.includes(currency)) {
+      return errorResponse("Currency must be INR or USD.");
     }
 
     /* ------------------------------------------------------------
        COVER IMAGE
     ------------------------------------------------------------ */
 
-    const normalizedCoverImage = normalizeImage(coverImage);
+    const coverImageError = validateImage(body.coverImage, "Cover image");
 
-    if (!normalizedCoverImage?.url) {
-      return NextResponse.json(
-        {
-          success: false,
-          message: "Valid cover image is required",
-        },
-        { status: 400 },
-      );
+    if (coverImageError) {
+      return errorResponse(coverImageError);
     }
 
-    /*
-     * New uploads should always contain a Cloudinary publicId.
-     * We allow an empty publicId for legacy records, but newly
-     * created records should have one.
-     */
-    if (!normalizedCoverImage.publicId) {
-      return NextResponse.json(
-        {
-          success: false,
-          message: "Cover image must be uploaded through Cloudinary",
-        },
-        { status: 400 },
-      );
-    }
+    const normalizedCoverImage = normalizeImage(body.coverImage);
 
     /* ------------------------------------------------------------
        GALLERY
     ------------------------------------------------------------ */
 
-    const normalizedGallery = normalizeGallery(gallery);
+    const galleryError = validateGallery(body.gallery);
+
+    if (galleryError) {
+      return errorResponse(galleryError);
+    }
+
+    const normalizedGallery = normalizeGallery(body.gallery);
 
     /* ------------------------------------------------------------
        ENTRY FEE
     ------------------------------------------------------------ */
 
-    const normalizedEntryFee = normalizeEntryFee(entryFee);
+    const normalizedEntryFee = normalizeEntryFee(body.entryFee);
 
     if (!normalizedEntryFee) {
-      return NextResponse.json(
-        {
-          success: false,
-          message: "Entry fee values must be valid non-negative numbers",
-        },
-        { status: 400 },
+      return errorResponse(
+        "Entry fee values must be valid non-negative numbers.",
       );
     }
 
     /* ------------------------------------------------------------
-       COORDINATES
+       LATITUDE
     ------------------------------------------------------------ */
 
-    const normalizedLatitude = normalizeNumber(latitude);
+    const latitudeError = validateCoordinate(
+      body.latitude,
+      -90,
+      90,
+      "Latitude",
+    );
 
-    const normalizedLongitude = normalizeNumber(longitude);
-
-    if (normalizedLatitude === null) {
-      return NextResponse.json(
-        {
-          success: false,
-          message: "Invalid latitude",
-        },
-        { status: 400 },
-      );
+    if (latitudeError) {
+      return errorResponse(latitudeError);
     }
 
+    const normalizedLatitude = normalizeNumber(body.latitude);
+
+    if (normalizedLatitude === null) {
+      return errorResponse("Latitude must be a valid number.");
+    }
+
+    /* ------------------------------------------------------------
+       LONGITUDE
+    ------------------------------------------------------------ */
+
+    const longitudeError = validateCoordinate(
+      body.longitude,
+      -180,
+      180,
+      "Longitude",
+    );
+
+    if (longitudeError) {
+      return errorResponse(longitudeError);
+    }
+
+    const normalizedLongitude = normalizeNumber(body.longitude);
+
     if (normalizedLongitude === null) {
-      return NextResponse.json(
-        {
-          success: false,
-          message: "Invalid longitude",
-        },
-        { status: 400 },
-      );
+      return errorResponse("Longitude must be a valid number.");
+    }
+
+    /* ------------------------------------------------------------
+       BOOLEAN FIELDS
+    ------------------------------------------------------------ */
+
+    const isFeatured = body.isFeatured === undefined ? false : body.isFeatured;
+
+    const isActive = body.isActive === undefined ? true : body.isActive;
+
+    const featuredError = validateBoolean(isFeatured, "isFeatured");
+
+    if (featuredError) {
+      return errorResponse(featuredError);
+    }
+
+    const activeError = validateBoolean(isActive, "isActive");
+
+    if (activeError) {
+      return errorResponse(activeError);
+    }
+
+    /* ------------------------------------------------------------
+       DUPLICATE SLUG
+    ------------------------------------------------------------ */
+
+    const existingPlace = await Place.findOne({
+      slug,
+    }).lean();
+
+    if (existingPlace) {
+      return errorResponse("Place slug already exists.", 409);
     }
 
     /* ------------------------------------------------------------
@@ -372,42 +510,39 @@ export async function POST(request) {
 
     const place = await Place.create({
       destination,
-
-      name: normalizedName,
-
-      slug: normalizedSlug,
-
+      name,
+      slug,
       category,
+      description,
 
-      description: normalizedDescription,
-
-      shortDescription: shortDescription?.trim() || "",
+      shortDescription: shortDescription || undefined,
 
       entryFee: normalizedEntryFee,
 
-      openingTime: openingTime?.trim() || "",
+      openingTime: openingTime || undefined,
 
-      closingTime: closingTime?.trim() || "",
+      closingTime: closingTime || undefined,
 
-      closedOn: closedOn?.trim() || "",
+      closedOn: closedOn || undefined,
 
-      bestTimeToVisit: bestTimeToVisit?.trim() || "",
+      bestTimeToVisit: bestTimeToVisit || undefined,
 
-      visitDuration: visitDuration?.trim() || "",
+      visitDuration: visitDuration || undefined,
 
-      address: address?.trim() || "",
+      address: address || undefined,
 
       latitude: normalizedLatitude,
 
       longitude: normalizedLongitude,
 
+      currency,
+
       coverImage: normalizedCoverImage,
 
       gallery: normalizedGallery,
 
-      isFeatured: typeof isFeatured === "boolean" ? isFeatured : false,
-
-      isActive: typeof isActive === "boolean" ? isActive : true,
+      isFeatured,
+      isActive,
     });
 
     const populatedPlace = await Place.findById(place._id)
@@ -417,7 +552,7 @@ export async function POST(request) {
     return NextResponse.json(
       {
         success: true,
-        message: "Place created successfully",
+        message: "Place created successfully.",
         data: populatedPlace,
       },
       { status: 201 },
@@ -426,33 +561,17 @@ export async function POST(request) {
     console.error("POST place error:", error);
 
     if (error?.code === 11000) {
-      return NextResponse.json(
-        {
-          success: false,
-          message: "Place slug already exists",
-        },
-        { status: 409 },
-      );
+      return errorResponse("Place slug already exists.", 409);
     }
 
     if (error?.name === "ValidationError") {
-      return NextResponse.json(
-        {
-          success: false,
-          message: Object.values(error.errors)
-            .map((item) => item.message)
-            .join(", "),
-        },
-        { status: 400 },
-      );
+      const message = Object.values(error.errors)
+        .map((item) => item.message)
+        .join(", ");
+
+      return errorResponse(message || "Validation failed.", 400);
     }
 
-    return NextResponse.json(
-      {
-        success: false,
-        message: "Failed to create place",
-      },
-      { status: 500 },
-    );
+    return errorResponse("Failed to create place.", 500);
   }
 }

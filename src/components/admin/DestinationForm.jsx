@@ -17,20 +17,90 @@ import { adminApi } from "@/utils/adminApi";
 import { getToken } from "@/utils/api";
 import ImageUpload from "@/components/admin/ImageUpload";
 
+/* ================================================================
+   CONSTANTS
+================================================================ */
+
+const LANGUAGES = ["Tamil", "English", "Hindi", "Malayalam"];
+
+const CURRENCIES = ["INR", "USD"];
+
+const DESTINATION_TYPES = [
+  {
+    value: "country",
+    label: "Country",
+  },
+  {
+    value: "state",
+    label: "State",
+  },
+  {
+    value: "city",
+    label: "City",
+  },
+  {
+    value: "region",
+    label: "Region",
+  },
+];
+
+/*
+ * Destination names, countries and states:
+ * - Unicode alphabets
+ * - spaces
+ *
+ * Examples:
+ * Chennai
+ * Tamil Nadu
+ * Kerala
+ * München
+ * കേരളം
+ */
+const NAME_REGEX = /^[\p{L}]+(?:[\s]+[\p{L}]+)*$/u;
+
+/*
+ * Slugs must match the backend schema:
+ * lowercase letters, numbers and single hyphens between words.
+ */
+const SLUG_REGEX = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+
+/*
+ * Image URLs must be HTTP/HTTPS.
+ */
+const URL_REGEX = /^https?:\/\/[^\s]+$/i;
+
+/*
+ * Allowed image MIME types.
+ */
+const ALLOWED_IMAGE_TYPES = [
+  "image/jpeg",
+  "image/jpg",
+  "image/png",
+  "image/webp",
+  "image/gif",
+];
+
+const MAX_IMAGE_SIZE = 10 * 1024 * 1024;
+
+const MAX_GALLERY_IMAGES = 30;
+
+/* ================================================================
+   COMPONENT
+================================================================ */
+
 export default function DestinationForm({
   initialData = null,
   initialValues = null,
   destinationId = null,
   mode = "create",
   onSuccess = null,
+  onCancel = null,
 }) {
   const router = useRouter();
 
-  /*
-   * =========================================================
-   * DESTINATION DATA
-   * =========================================================
-   */
+  /* =========================================================
+     DESTINATION DATA
+  ========================================================= */
 
   const destination = initialData || initialValues || null;
 
@@ -38,16 +108,16 @@ export default function DestinationForm({
 
   const galleryInputRef = useRef(null);
 
-  /*
-   * =========================================================
-   * STATE
-   * =========================================================
-   */
+  /* =========================================================
+     STATE
+  ========================================================= */
 
   const [loading, setLoading] = useState(false);
+
   const [galleryUploading, setGalleryUploading] = useState(false);
 
   const [error, setError] = useState("");
+
   const [galleryError, setGalleryError] = useState("");
 
   const [formData, setFormData] = useState({
@@ -60,7 +130,7 @@ export default function DestinationForm({
     shortDescription: "",
     bestTimeToVisit: "",
     language: "",
-    currency: "",
+    currency: "INR",
     coverImage: null,
     gallery: [],
     latitude: "",
@@ -70,32 +140,23 @@ export default function DestinationForm({
     isActive: true,
   });
 
-  /*
-   * =========================================================
-   * IMAGE NORMALIZATION
-   * =========================================================
-   */
+  /* =========================================================
+     IMAGE NORMALIZATION
+  ========================================================= */
 
   function normalizeImage(image) {
-    /*
-     * New Cloudinary object:
-     *
-     * {
-     *   url: "...",
-     *   publicId: "..."
-     * }
-     */
-
-    if (image && typeof image === "object" && image.url) {
+    if (
+      image &&
+      typeof image === "object" &&
+      typeof image.url === "string" &&
+      image.url.trim()
+    ) {
       return {
-        url: image.url,
-        publicId: image.publicId || "",
+        url: image.url.trim(),
+        publicId:
+          typeof image.publicId === "string" ? image.publicId.trim() : "",
       };
     }
-
-    /*
-     * Legacy URL-only image.
-     */
 
     if (typeof image === "string" && image.trim()) {
       return {
@@ -112,14 +173,15 @@ export default function DestinationForm({
       return [];
     }
 
-    return gallery.map((image) => normalizeImage(image)).filter(Boolean);
+    return gallery
+      .map((image) => normalizeImage(image))
+      .filter(Boolean)
+      .slice(0, MAX_GALLERY_IMAGES);
   }
 
-  /*
-   * =========================================================
-   * LOAD INITIAL DATA
-   * =========================================================
-   */
+  /* =========================================================
+     LOAD INITIAL DATA
+  ========================================================= */
 
   useEffect(() => {
     if (!destination) {
@@ -128,69 +190,136 @@ export default function DestinationForm({
 
     setFormData({
       name: destination.name || "",
-
       slug: destination.slug || "",
-
       type: destination.type || "city",
-
       country: destination.country || "",
-
       state: destination.state || "",
-
       description: destination.description || "",
-
       shortDescription: destination.shortDescription || "",
-
       bestTimeToVisit: destination.bestTimeToVisit || "",
-
       language: destination.language || "",
-
-      currency: destination.currency || "",
-
+      currency: CURRENCIES.includes(destination.currency)
+        ? destination.currency
+        : "INR",
       coverImage: normalizeImage(destination.coverImage),
-
       gallery: normalizeGallery(destination.gallery),
-
       latitude: destination.latitude ?? "",
-
       longitude: destination.longitude ?? "",
-
       address: destination.address || "",
-
-      isFeatured: Boolean(destination.isFeatured),
-
-      isActive: destination.isActive ?? true,
+      isFeatured: destination.isFeatured === true,
+      isActive: destination.isActive !== false,
     });
   }, [destination]);
 
-  /*
-   * =========================================================
-   * INPUT CHANGE
-   * =========================================================
-   */
+  /* =========================================================
+     ALPHABET-ONLY INPUT CLEANER
+  ========================================================= */
 
-  function handleChange(event) {
-    const { name, value, type, checked } = event.target;
-
-    setFormData((previous) => ({
-      ...previous,
-      [name]: type === "checkbox" ? checked : value,
-    }));
+  function sanitizeName(value) {
+    return value
+      .replace(/[^\p{L}\s]/gu, "")
+      .replace(/\s+/g, " ")
+      .replace(/^\s+/g, "");
   }
 
-  /*
-   * =========================================================
-   * GENERATE SLUG
-   * =========================================================
-   */
+  /* =========================================================
+     SLUG GENERATOR
+  ========================================================= */
 
-  function generateSlug() {
-    const slug = formData.name
+  function createSlug(value) {
+    return value
+      .normalize("NFKD")
+      .replace(/[\u0300-\u036f]/g, "")
       .toLowerCase()
       .trim()
       .replace(/[^a-z0-9\s-]/g, "")
       .replace(/\s+/g, "-")
-      .replace(/-+/g, "-");
+      .replace(/-+/g, "-")
+      .replace(/^-+|-+$/g, "");
+  }
+
+  /* =========================================================
+     INPUT CHANGE
+  ========================================================= */
+
+  function handleChange(event) {
+    const { name, value, type, checked } = event.target;
+
+    /*
+     * Checkbox
+     */
+    if (type === "checkbox") {
+      setFormData((previous) => ({
+        ...previous,
+        [name]: checked,
+      }));
+
+      return;
+    }
+
+    /*
+     * Name fields
+     */
+    if (name === "name" || name === "country" || name === "state") {
+      setFormData((previous) => ({
+        ...previous,
+        [name]: sanitizeName(value),
+      }));
+
+      return;
+    }
+
+    /*
+     * Language
+     */
+    if (name === "language") {
+      setFormData((previous) => ({
+        ...previous,
+        language: value,
+      }));
+
+      return;
+    }
+
+    /*
+     * Currency
+     */
+    if (name === "currency") {
+      setFormData((previous) => ({
+        ...previous,
+        currency: value,
+      }));
+
+      return;
+    }
+
+    /*
+     * Type
+     */
+    if (name === "type") {
+      setFormData((previous) => ({
+        ...previous,
+        type: value,
+      }));
+
+      return;
+    }
+
+    /*
+     * Normal fields
+     */
+    setFormData((previous) => ({
+      ...previous,
+      [name]: value,
+    }));
+  }
+
+  /* =========================================================
+     GENERATE SLUG
+  ========================================================= */
+
+  function generateSlug() {
+    const slug = createSlug(formData.name);
 
     setFormData((previous) => ({
       ...previous,
@@ -198,11 +327,9 @@ export default function DestinationForm({
     }));
   }
 
-  /*
-   * =========================================================
-   * GALLERY UPLOAD
-   * =========================================================
-   */
+  /* =========================================================
+     GALLERY UPLOAD
+  ========================================================= */
 
   async function handleGalleryUpload(event) {
     const files = Array.from(event.target.files || []);
@@ -212,6 +339,34 @@ export default function DestinationForm({
     }
 
     setGalleryError("");
+
+    /*
+     * Check gallery count before uploading.
+     */
+    const remainingSlots = MAX_GALLERY_IMAGES - formData.gallery.length;
+
+    if (remainingSlots <= 0) {
+      setGalleryError(
+        `You can upload a maximum of ${MAX_GALLERY_IMAGES} gallery images.`,
+      );
+
+      if (galleryInputRef.current) {
+        galleryInputRef.current.value = "";
+      }
+
+      return;
+    }
+
+    const filesToUpload = files.slice(0, remainingSlots);
+
+    if (files.length > remainingSlots) {
+      setGalleryError(
+        `Only ${remainingSlots} more gallery image${
+          remainingSlots === 1 ? "" : "s"
+        } can be uploaded.`,
+      );
+    }
+
     setGalleryUploading(true);
 
     try {
@@ -221,34 +376,22 @@ export default function DestinationForm({
         throw new Error("Admin session not found. Please log in again.");
       }
 
-      const allowedTypes = [
-        "image/jpeg",
-        "image/jpg",
-        "image/png",
-        "image/webp",
-        "image/gif",
-      ];
-
-      const maxSize = 10 * 1024 * 1024;
-
       const uploadedImages = [];
 
-      for (const file of files) {
+      for (const file of filesToUpload) {
         /*
-         * Validate type.
+         * Validate image type.
          */
-
-        if (!allowedTypes.includes(file.type)) {
+        if (!ALLOWED_IMAGE_TYPES.includes(file.type)) {
           throw new Error(
             `${file.name}: Invalid image type. Only JPG, PNG, WEBP and GIF are allowed.`,
           );
         }
 
         /*
-         * Validate size.
+         * Validate image size.
          */
-
-        if (file.size > maxSize) {
+        if (file.size > MAX_IMAGE_SIZE) {
           throw new Error(`${file.name}: Image size cannot exceed 10 MB.`);
         }
 
@@ -266,7 +409,15 @@ export default function DestinationForm({
           body: uploadFormData,
         });
 
-        const data = await response.json();
+        const responseText = await response.text();
+
+        let data = {};
+
+        try {
+          data = responseText ? JSON.parse(responseText) : {};
+        } catch {
+          throw new Error("Upload server returned an invalid response.");
+        }
 
         if (response.status === 401) {
           throw new Error(
@@ -275,31 +426,39 @@ export default function DestinationForm({
         }
 
         if (!response.ok || !data.success) {
-          throw new Error(data?.message || `Failed to upload ${file.name}`);
+          throw new Error(data?.message || `Failed to upload ${file.name}.`);
         }
 
-        if (!data.image?.url) {
+        if (!data.image?.url || !URL_REGEX.test(data.image.url)) {
           throw new Error(
-            `Upload completed but no image URL was returned for ${file.name}.`,
+            `Upload completed but no valid image URL was returned for ${file.name}.`,
+          );
+        }
+
+        if (!data.image?.publicId || typeof data.image.publicId !== "string") {
+          throw new Error(
+            `Upload completed but no Cloudinary public ID was returned for ${file.name}.`,
           );
         }
 
         uploadedImages.push({
-          url: data.image.url,
-          publicId: data.image.publicId || "",
+          url: data.image.url.trim(),
+          publicId: data.image.publicId.trim(),
         });
       }
 
       /*
-       * Add newly uploaded images.
+       * Add uploaded images.
        */
-
       setFormData((previous) => ({
         ...previous,
-        gallery: [...previous.gallery, ...uploadedImages],
+        gallery: [...previous.gallery, ...uploadedImages].slice(
+          0,
+          MAX_GALLERY_IMAGES,
+        ),
       }));
     } catch (uploadError) {
-      console.error("Gallery upload error:", uploadError);
+      console.error("Destination gallery upload error:", uploadError);
 
       setGalleryError(
         uploadError?.message || "Failed to upload gallery image.",
@@ -308,21 +467,17 @@ export default function DestinationForm({
       setGalleryUploading(false);
 
       /*
-       * Reset input so the same file
-       * can be selected again.
+       * Allow selecting the same file again.
        */
-
       if (galleryInputRef.current) {
         galleryInputRef.current.value = "";
       }
     }
   }
 
-  /*
-   * =========================================================
-   * REMOVE GALLERY IMAGE
-   * =========================================================
-   */
+  /* =========================================================
+     REMOVE GALLERY IMAGE
+  ========================================================= */
 
   async function handleRemoveGalleryImage(index) {
     const image = formData.gallery[index];
@@ -334,10 +489,9 @@ export default function DestinationForm({
     setGalleryError("");
 
     /*
-     * If this is a Cloudinary image,
+     * If this image has a Cloudinary public ID,
      * remove it from Cloudinary first.
      */
-
     if (image.publicId) {
       try {
         const token = getToken();
@@ -350,16 +504,28 @@ export default function DestinationForm({
           method: "DELETE",
           headers: {
             "Content-Type": "application/json",
-
             Authorization: `Bearer ${token}`,
           },
-
           body: JSON.stringify({
             publicId: image.publicId,
           }),
         });
 
-        const data = await response.json();
+        const responseText = await response.text();
+
+        let data = {};
+
+        try {
+          data = responseText ? JSON.parse(responseText) : {};
+        } catch {
+          throw new Error("Image delete server returned an invalid response.");
+        }
+
+        if (response.status === 401) {
+          throw new Error(
+            "Your admin session has expired. Please log in again.",
+          );
+        }
 
         if (!response.ok || !data.success) {
           throw new Error(data?.message || "Failed to delete image.");
@@ -378,91 +544,491 @@ export default function DestinationForm({
     /*
      * Remove from local form state.
      */
-
     setFormData((previous) => ({
       ...previous,
-
       gallery: previous.gallery.filter((_, imageIndex) => imageIndex !== index),
     }));
   }
 
-  /*
-   * =========================================================
-   * BUILD PAYLOAD
-   * =========================================================
-   */
+  /* =========================================================
+     IMAGE VALIDATION
+  ========================================================= */
+
+  function validateImage(image, label, required = false) {
+    if (!image) {
+      if (required) {
+        throw new Error(`${label} is required. Please upload an image.`);
+      }
+
+      return;
+    }
+
+    if (
+      typeof image !== "object" ||
+      typeof image.url !== "string" ||
+      !image.url.trim()
+    ) {
+      throw new Error(`${label} must contain a valid image URL.`);
+    }
+
+    if (!URL_REGEX.test(image.url.trim())) {
+      throw new Error(`${label} must use a valid HTTP or HTTPS URL.`);
+    }
+
+    if (typeof image.publicId !== "string" || !image.publicId.trim()) {
+      throw new Error(`${label} is missing its Cloudinary public ID.`);
+    }
+  }
+
+  /* =========================================================
+     BUILD PAYLOAD
+  ========================================================= */
 
   function buildPayload() {
+    const name = formData.name.trim();
+
+    const slug = formData.slug.trim().toLowerCase();
+
+    const country = formData.country.trim();
+
+    const state = formData.state.trim();
+
+    const description = formData.description.trim();
+
+    const shortDescription = formData.shortDescription.trim();
+
+    const bestTimeToVisit = formData.bestTimeToVisit.trim();
+
+    const address = formData.address.trim();
+
+    /*
+     * Validate cover image.
+     */
+    validateImage(formData.coverImage, "Cover image", true);
+
+    /*
+     * Validate gallery.
+     */
+    if (
+      !Array.isArray(formData.gallery) ||
+      formData.gallery.length > MAX_GALLERY_IMAGES
+    ) {
+      throw new Error(
+        `Gallery cannot contain more than ${MAX_GALLERY_IMAGES} images.`,
+      );
+    }
+
+    formData.gallery.forEach((image, index) => {
+      validateImage(image, `Gallery image ${index + 1}`, true);
+    });
+
     const payload = {
-      name: formData.name.trim(),
-
-      slug: formData.slug.trim().toLowerCase(),
-
+      name,
+      slug,
       type: formData.type,
+      country,
+      description,
 
-      country: formData.country.trim(),
+      coverImage: {
+        url: formData.coverImage.url.trim(),
+        publicId: formData.coverImage.publicId.trim(),
+      },
 
-      description: formData.description.trim(),
+      gallery: formData.gallery.map((image) => ({
+        url: image.url.trim(),
+        publicId: image.publicId.trim(),
+      })),
 
-      /*
-       * Cover image.
-       */
+      currency: formData.currency,
 
-      coverImage: formData.coverImage
-        ? {
-            url: formData.coverImage.url,
+      isFeatured: formData.isFeatured === true,
 
-            publicId: formData.coverImage.publicId || "",
-          }
-        : null,
-
-      /*
-       * Gallery.
-       */
-
-      gallery: formData.gallery
-        .filter((image) => image && image.url)
-        .map((image) => ({
-          url: image.url,
-
-          publicId: image.publicId || "",
-        })),
-
-      isFeatured: Boolean(formData.isFeatured),
-
-      isActive: Boolean(formData.isActive),
+      isActive: formData.isActive === true,
     };
 
     /*
-     * Optional strings.
+     * Optional state.
      */
-
-    if (formData.state.trim()) {
-      payload.state = formData.state.trim();
+    if (state) {
+      payload.state = state;
     }
 
-    if (formData.shortDescription.trim()) {
-      payload.shortDescription = formData.shortDescription.trim();
+    /*
+     * Optional short description.
+     */
+    if (shortDescription) {
+      payload.shortDescription = shortDescription;
     }
 
-    if (formData.bestTimeToVisit.trim()) {
-      payload.bestTimeToVisit = formData.bestTimeToVisit.trim();
+    /*
+     * Optional best time.
+     */
+    if (bestTimeToVisit) {
+      payload.bestTimeToVisit = bestTimeToVisit;
     }
 
-    if (formData.language.trim()) {
-      payload.language = formData.language.trim();
+    /*
+     * Optional language.
+     */
+    if (formData.language) {
+      payload.language = formData.language;
     }
 
-    if (formData.currency.trim()) {
-      payload.currency = formData.currency.trim();
-    }
-
-    if (formData.address.trim()) {
-      payload.address = formData.address.trim();
+    /*
+     * Optional address.
+     */
+    if (address) {
+      payload.address = address;
     }
 
     /*
      * Latitude.
+     */
+    if (
+      formData.latitude !== "" &&
+      formData.latitude !== null &&
+      formData.latitude !== undefined
+    ) {
+      const latitude = Number(formData.latitude);
+
+      if (!Number.isFinite(latitude)) {
+        throw new Error("Latitude must be a valid number.");
+      }
+
+      if (latitude < -90 || latitude > 90) {
+        throw new Error("Latitude must be between -90 and 90.");
+      }
+
+      payload.latitude = latitude;
+    }
+
+    /*
+     * Longitude.
+     */
+    if (
+      formData.longitude !== "" &&
+      formData.longitude !== null &&
+      formData.longitude !== undefined
+    ) {
+      const longitude = Number(formData.longitude);
+
+      if (!Number.isFinite(longitude)) {
+        throw new Error("Longitude must be a valid number.");
+      }
+
+      if (longitude < -180 || longitude > 180) {
+        throw new Error("Longitude must be between -180 and 180.");
+      }
+
+      payload.longitude = longitude;
+    }
+
+    return payload;
+  }
+
+  /* =========================================================
+     EXTRACT SAVED DESTINATION
+  ========================================================= */
+
+  function extractSavedDestination(response) {
+    /*
+     * Supports common API response shapes:
+     *
+     * {
+     *   success: true,
+     *   data: {
+     *     data: destination
+     *   }
+     * }
+     *
+     * {
+     *   success: true,
+     *   data: destination
+     * }
+     *
+     * {
+     *   success: true,
+     *   destination: destination
+     * }
+     *
+     * {
+     *   success: true,
+     *   data: {
+     *     destination: destination
+     *   }
+     * }
+     */
+
+    const candidates = [
+      response?.data?.data,
+      response?.data?.destination,
+      response?.destination,
+      response?.data,
+    ];
+
+    for (const candidate of candidates) {
+      if (
+        candidate &&
+        typeof candidate === "object" &&
+        (candidate._id || candidate.id)
+      ) {
+        return candidate;
+      }
+    }
+
+    /*
+     * Some APIs may return the destination
+     * directly in the response object.
+     */
+    if (
+      response &&
+      typeof response === "object" &&
+      (response._id || response.id)
+    ) {
+      return response;
+    }
+
+    return null;
+  }
+
+  /* =========================================================
+     SUBMIT
+  ========================================================= */
+
+  async function handleSubmit(event) {
+    event.preventDefault();
+
+    setError("");
+
+    /*
+     * -----------------------------------------
+     * BASIC VALUES
+     * -----------------------------------------
+     */
+
+    const name = formData.name.trim();
+
+    const country = formData.country.trim();
+
+    const state = formData.state.trim();
+
+    const slug = formData.slug.trim().toLowerCase();
+
+    const description = formData.description.trim();
+
+    const shortDescription = formData.shortDescription.trim();
+
+    const bestTimeToVisit = formData.bestTimeToVisit.trim();
+
+    const address = formData.address.trim();
+
+    /*
+     * -----------------------------------------
+     * NAME
+     * -----------------------------------------
+     */
+
+    if (!name) {
+      setError("Destination name is required.");
+      return;
+    }
+
+    if (name.length < 2 || name.length > 150) {
+      setError("Destination name must be between 2 and 150 characters.");
+      return;
+    }
+
+    if (!NAME_REGEX.test(name)) {
+      setError("Destination name can contain alphabets and spaces only.");
+      return;
+    }
+
+    /*
+     * -----------------------------------------
+     * SLUG
+     * -----------------------------------------
+     */
+
+    if (!slug) {
+      setError("Destination slug is required.");
+      return;
+    }
+
+    if (slug.length < 2 || slug.length > 150) {
+      setError("Slug must be between 2 and 150 characters.");
+      return;
+    }
+
+    if (!SLUG_REGEX.test(slug)) {
+      setError("Slug can contain lowercase letters, numbers and hyphens only.");
+      return;
+    }
+
+    /*
+     * -----------------------------------------
+     * TYPE
+     * -----------------------------------------
+     */
+
+    if (!DESTINATION_TYPES.some((item) => item.value === formData.type)) {
+      setError("Please select a valid destination type.");
+      return;
+    }
+
+    /*
+     * -----------------------------------------
+     * COUNTRY
+     * -----------------------------------------
+     */
+
+    if (!country) {
+      setError("Country is required.");
+      return;
+    }
+
+    if (country.length < 2 || country.length > 150) {
+      setError("Country must be between 2 and 150 characters.");
+      return;
+    }
+
+    if (!NAME_REGEX.test(country)) {
+      setError("Country can contain alphabets and spaces only.");
+      return;
+    }
+
+    /*
+     * -----------------------------------------
+     * STATE
+     * -----------------------------------------
+     */
+
+    if (state) {
+      if (state.length > 150) {
+        setError("State cannot exceed 150 characters.");
+        return;
+      }
+
+      if (!NAME_REGEX.test(state)) {
+        setError("State can contain alphabets and spaces only.");
+        return;
+      }
+    }
+
+    /*
+     * -----------------------------------------
+     * LANGUAGE
+     * -----------------------------------------
+     */
+
+    if (formData.language && !LANGUAGES.includes(formData.language)) {
+      setError("Please select a valid language.");
+      return;
+    }
+
+    /*
+     * -----------------------------------------
+     * CURRENCY
+     * -----------------------------------------
+     */
+
+    if (!CURRENCIES.includes(formData.currency)) {
+      setError("Please select INR or USD as currency.");
+      return;
+    }
+
+    /*
+     * -----------------------------------------
+     * SHORT DESCRIPTION
+     * -----------------------------------------
+     */
+
+    if (shortDescription.length > 500) {
+      setError("Short description cannot exceed 500 characters.");
+      return;
+    }
+
+    /*
+     * -----------------------------------------
+     * DESCRIPTION
+     * -----------------------------------------
+     */
+
+    if (!description) {
+      setError("Description is required.");
+      return;
+    }
+
+    if (description.length < 10) {
+      setError("Description must be at least 10 characters.");
+      return;
+    }
+
+    if (description.length > 5000) {
+      setError("Description cannot exceed 5000 characters.");
+      return;
+    }
+
+    /*
+     * -----------------------------------------
+     * BEST TIME
+     * -----------------------------------------
+     */
+
+    if (bestTimeToVisit.length > 200) {
+      setError("Best time to visit cannot exceed 200 characters.");
+      return;
+    }
+
+    /*
+     * -----------------------------------------
+     * ADDRESS
+     * -----------------------------------------
+     */
+
+    if (address.length > 500) {
+      setError("Address cannot exceed 500 characters.");
+      return;
+    }
+
+    /*
+     * -----------------------------------------
+     * COVER IMAGE
+     * -----------------------------------------
+     */
+
+    try {
+      validateImage(formData.coverImage, "Cover image", true);
+    } catch (validationError) {
+      setError(validationError.message);
+      return;
+    }
+
+    /*
+     * -----------------------------------------
+     * GALLERY
+     * -----------------------------------------
+     */
+
+    if (formData.gallery.length > MAX_GALLERY_IMAGES) {
+      setError(
+        `Gallery cannot contain more than ${MAX_GALLERY_IMAGES} images.`,
+      );
+      return;
+    }
+
+    try {
+      formData.gallery.forEach((image, index) => {
+        validateImage(image, `Gallery image ${index + 1}`, true);
+      });
+    } catch (validationError) {
+      setError(validationError.message);
+      return;
+    }
+
+    /*
+     * -----------------------------------------
+     * LATITUDE
+     * -----------------------------------------
      */
 
     if (
@@ -472,15 +1038,21 @@ export default function DestinationForm({
     ) {
       const latitude = Number(formData.latitude);
 
-      if (Number.isNaN(latitude)) {
-        throw new Error("Latitude must be a valid number.");
+      if (!Number.isFinite(latitude)) {
+        setError("Latitude must be a valid number.");
+        return;
       }
 
-      payload.latitude = latitude;
+      if (latitude < -90 || latitude > 90) {
+        setError("Latitude must be between -90 and 90.");
+        return;
+      }
     }
 
     /*
-     * Longitude.
+     * -----------------------------------------
+     * LONGITUDE
+     * -----------------------------------------
      */
 
     if (
@@ -490,66 +1062,33 @@ export default function DestinationForm({
     ) {
       const longitude = Number(formData.longitude);
 
-      if (Number.isNaN(longitude)) {
-        throw new Error("Longitude must be a valid number.");
+      if (!Number.isFinite(longitude)) {
+        setError("Longitude must be a valid number.");
+        return;
       }
 
-      payload.longitude = longitude;
-    }
-
-    return payload;
-  }
-
-  /*
-   * =========================================================
-   * SUBMIT
-   * =========================================================
-   */
-
-  async function handleSubmit(event) {
-    event.preventDefault();
-
-    setError("");
-
-    /*
-     * -----------------------------------------
-     * VALIDATION
-     * -----------------------------------------
-     */
-
-    if (!formData.name.trim()) {
-      setError("Destination name is required.");
-      return;
-    }
-
-    if (!formData.slug.trim()) {
-      setError("Destination slug is required.");
-      return;
-    }
-
-    if (!formData.country.trim()) {
-      setError("Country is required.");
-      return;
-    }
-
-    if (!formData.description.trim()) {
-      setError("Description is required.");
-      return;
-    }
-
-    if (!formData.coverImage?.url) {
-      setError("Cover image is required. Please upload an image.");
-      return;
+      if (longitude < -180 || longitude > 180) {
+        setError("Longitude must be between -180 and 180.");
+        return;
+      }
     }
 
     /*
-     * Edit mode requires an ID.
+     * -----------------------------------------
+     * EDIT MODE ID
+     * -----------------------------------------
      */
 
     if (mode === "edit" && !id) {
       setError("Destination ID is missing. Cannot update destination.");
       return;
     }
+
+    /*
+     * -----------------------------------------
+     * SUBMIT
+     * -----------------------------------------
+     */
 
     setLoading(true);
 
@@ -561,21 +1100,15 @@ export default function DestinationForm({
       let response;
 
       /*
-       * -----------------------------------------
        * CREATE
-       * -----------------------------------------
        */
-
       if (mode === "create") {
         response = await adminApi.post("/api/dashboard/destinations", payload);
       }
 
       /*
-       * -----------------------------------------
        * UPDATE
-       * -----------------------------------------
        */
-
       if (mode === "edit") {
         response = await adminApi.put(
           `/api/dashboard/destinations/${id}`,
@@ -584,37 +1117,58 @@ export default function DestinationForm({
       }
 
       /*
-       * -----------------------------------------
-       * VALIDATE RESPONSE
-       * -----------------------------------------
+       * Validate response.
        */
-
       if (!response?.success) {
         throw new Error(response?.message || "Failed to save destination.");
       }
 
       /*
-       * -----------------------------------------
-       * MODAL MODE
-       * -----------------------------------------
+       * =====================================================
+       * IMPORTANT:
+       * Extract the actual saved destination object.
        *
-       * When this form is inside the
-       * destination edit modal, the parent
-       * handles closing and refreshing.
+       * Previously:
+       *
+       * await onSuccess(response);
+       *
+       * That caused the Transportation page to receive
+       * the API response instead of the destination itself.
+       *
+       * Now onSuccess receives:
+       *
+       * {
+       *   _id: "...",
+       *   name: "...",
+       *   slug: "...",
+       *   ...
+       * }
+       * =====================================================
        */
 
       if (typeof onSuccess === "function") {
-        await onSuccess(response);
+        const savedDestination = extractSavedDestination(response);
+
+        console.log("Saved destination object:", savedDestination);
+
+        /*
+         * The destination ID is required by the
+         * Transportation create flow.
+         */
+        if (!savedDestination?._id && !savedDestination?.id) {
+          throw new Error(
+            "Destination was created, but its ID was not returned by the server.",
+          );
+        }
+
+        await onSuccess(savedDestination);
 
         return;
       }
 
       /*
-       * -----------------------------------------
-       * STANDALONE PAGE MODE
-       * -----------------------------------------
+       * Standalone page mode.
        */
-
       router.push("/admin/dashboard/destinations");
 
       router.refresh();
@@ -631,35 +1185,46 @@ export default function DestinationForm({
     }
   }
 
-  /*
-   * =========================================================
-   * INPUT CLASS
-   * =========================================================
-   */
+  /* =========================================================
+     CANCEL
+  ========================================================= */
+
+  function handleCancel() {
+    if (loading) {
+      return;
+    }
+
+    if (typeof onCancel === "function") {
+      onCancel();
+      return;
+    }
+
+    router.push("/admin/dashboard/destinations");
+  }
+
+  /* =========================================================
+     INPUT CLASS
+  ========================================================= */
 
   const inputClass =
     "w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-emerald-500 focus:ring-4 focus:ring-emerald-50 disabled:cursor-not-allowed disabled:bg-slate-50";
 
-  /*
-   * =========================================================
-   * SECTION CLASS
-   * =========================================================
-   */
+  /* =========================================================
+     SECTION CLASS
+  ========================================================= */
 
   const sectionClass =
     "rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6";
 
-  /*
-   * =========================================================
-   * UI
-   * =========================================================
-   */
+  /* =========================================================
+     UI
+  ========================================================= */
 
   return (
     <form onSubmit={handleSubmit} className="space-y-6">
       {/* =====================================================
           ERROR
-          ===================================================== */}
+      ===================================================== */}
 
       {error && (
         <div className="flex items-start gap-3 rounded-xl border border-red-200 bg-red-50 p-4">
@@ -671,7 +1236,7 @@ export default function DestinationForm({
 
       {/* =====================================================
           BASIC INFORMATION
-          ===================================================== */}
+      ===================================================== */}
 
       <section className={sectionClass}>
         <div className="mb-6 flex items-start gap-3">
@@ -705,8 +1270,14 @@ export default function DestinationForm({
               onChange={handleChange}
               placeholder="Example: Chennai"
               disabled={loading}
+              maxLength={150}
+              autoComplete="off"
               className={inputClass}
             />
+
+            <p className="mt-1 text-xs text-slate-400">
+              Alphabets and spaces only.
+            </p>
           </div>
 
           {/* SLUG */}
@@ -724,6 +1295,8 @@ export default function DestinationForm({
                 onChange={handleChange}
                 placeholder="chennai"
                 disabled={loading}
+                maxLength={150}
+                autoComplete="off"
                 className={`${inputClass} min-w-0 flex-1`}
               />
 
@@ -736,6 +1309,10 @@ export default function DestinationForm({
                 Generate
               </button>
             </div>
+
+            <p className="mt-1 text-xs text-slate-400">
+              Lowercase letters, numbers and hyphens.
+            </p>
           </div>
 
           {/* TYPE */}
@@ -752,13 +1329,11 @@ export default function DestinationForm({
               disabled={loading}
               className={inputClass}
             >
-              <option value="country">Country</option>
-
-              <option value="state">State</option>
-
-              <option value="city">City</option>
-
-              <option value="region">Region</option>
+              {DESTINATION_TYPES.map((item) => (
+                <option key={item.value} value={item.value}>
+                  {item.label}
+                </option>
+              ))}
             </select>
           </div>
 
@@ -776,8 +1351,14 @@ export default function DestinationForm({
               onChange={handleChange}
               placeholder="India"
               disabled={loading}
+              maxLength={150}
+              autoComplete="country-name"
               className={inputClass}
             />
+
+            <p className="mt-1 text-xs text-slate-400">
+              Alphabets and spaces only.
+            </p>
           </div>
 
           {/* STATE */}
@@ -794,8 +1375,14 @@ export default function DestinationForm({
               onChange={handleChange}
               placeholder="Tamil Nadu"
               disabled={loading}
+              maxLength={150}
+              autoComplete="address-level1"
               className={inputClass}
             />
+
+            <p className="mt-1 text-xs text-slate-400">
+              Alphabets and spaces only.
+            </p>
           </div>
 
           {/* LANGUAGE */}
@@ -805,33 +1392,43 @@ export default function DestinationForm({
               Language
             </label>
 
-            <input
-              type="text"
+            <select
               name="language"
               value={formData.language}
               onChange={handleChange}
-              placeholder="Tamil, English"
               disabled={loading}
               className={inputClass}
-            />
+            >
+              <option value="">Select language</option>
+
+              {LANGUAGES.map((language) => (
+                <option key={language} value={language}>
+                  {language}
+                </option>
+              ))}
+            </select>
           </div>
 
           {/* CURRENCY */}
 
           <div>
             <label className="mb-2 block text-sm font-semibold text-slate-700">
-              Currency
+              Currency *
             </label>
 
-            <input
-              type="text"
+            <select
               name="currency"
               value={formData.currency}
               onChange={handleChange}
-              placeholder="INR"
               disabled={loading}
               className={inputClass}
-            />
+            >
+              {CURRENCIES.map((currency) => (
+                <option key={currency} value={currency}>
+                  {currency}
+                </option>
+              ))}
+            </select>
           </div>
 
           {/* BEST TIME */}
@@ -848,6 +1445,7 @@ export default function DestinationForm({
               onChange={handleChange}
               placeholder="October to March"
               disabled={loading}
+              maxLength={200}
               className={inputClass}
             />
           </div>
@@ -856,7 +1454,7 @@ export default function DestinationForm({
 
       {/* =====================================================
           DESCRIPTION
-          ===================================================== */}
+      ===================================================== */}
 
       <section className={sectionClass}>
         <div className="mb-6 flex items-start gap-3">
@@ -889,6 +1487,7 @@ export default function DestinationForm({
               onChange={handleChange}
               placeholder="A short description of the destination"
               disabled={loading}
+              maxLength={500}
               className={inputClass}
             />
           </div>
@@ -907,15 +1506,23 @@ export default function DestinationForm({
               rows={7}
               placeholder="Write a detailed description..."
               disabled={loading}
+              maxLength={5000}
               className={`${inputClass} resize-y`}
             />
+
+            <div className="mt-1 flex justify-end">
+              <span className="text-xs text-slate-400">
+                {formData.description.length}
+                /5000
+              </span>
+            </div>
           </div>
         </div>
       </section>
 
       {/* =====================================================
           LOCATION
-          ===================================================== */}
+      ===================================================== */}
 
       <section className={sectionClass}>
         <div className="mb-6 flex items-start gap-3">
@@ -947,6 +1554,8 @@ export default function DestinationForm({
               onChange={handleChange}
               placeholder="Destination address"
               disabled={loading}
+              maxLength={500}
+              autoComplete="street-address"
               className={inputClass}
             />
           </div>
@@ -960,14 +1569,21 @@ export default function DestinationForm({
 
             <input
               type="number"
-              step="any"
               name="latitude"
               value={formData.latitude}
               onChange={handleChange}
+              min="-90"
+              max="90"
+              step="any"
+              inputMode="decimal"
               placeholder="13.0827"
               disabled={loading}
               className={inputClass}
             />
+
+            <p className="mt-1 text-xs text-slate-400">
+              Allowed range: -90 to 90.
+            </p>
           </div>
 
           {/* LONGITUDE */}
@@ -979,21 +1595,28 @@ export default function DestinationForm({
 
             <input
               type="number"
-              step="any"
               name="longitude"
               value={formData.longitude}
               onChange={handleChange}
+              min="-180"
+              max="180"
+              step="any"
+              inputMode="decimal"
               placeholder="80.2707"
               disabled={loading}
               className={inputClass}
             />
+
+            <p className="mt-1 text-xs text-slate-400">
+              Allowed range: -180 to 180.
+            </p>
           </div>
         </div>
       </section>
 
       {/* =====================================================
           IMAGES
-          ===================================================== */}
+      ===================================================== */}
 
       <section className={sectionClass}>
         <div className="mb-6 flex items-start gap-3">
@@ -1037,7 +1660,8 @@ export default function DestinationForm({
               </label>
 
               <p className="mt-1 text-xs text-slate-500">
-                Upload one or more images for this destination.
+                Upload one or more images for this destination. Maximum{" "}
+                {MAX_GALLERY_IMAGES} images.
               </p>
             </div>
 
@@ -1053,7 +1677,11 @@ export default function DestinationForm({
             <button
               type="button"
               onClick={() => galleryInputRef.current?.click()}
-              disabled={loading || galleryUploading}
+              disabled={
+                loading ||
+                galleryUploading ||
+                formData.gallery.length >= MAX_GALLERY_IMAGES
+              }
               className="flex min-h-36 w-full flex-col items-center justify-center rounded-2xl border-2 border-dashed border-slate-200 bg-slate-50 px-6 py-8 transition hover:border-emerald-300 hover:bg-emerald-50 disabled:cursor-not-allowed disabled:opacity-60"
             >
               {galleryUploading ? (
@@ -1076,7 +1704,9 @@ export default function DestinationForm({
                   <ImagePlus size={36} className="mb-3 text-emerald-500" />
 
                   <span className="text-sm font-semibold text-slate-700">
-                    Upload Gallery Images
+                    {formData.gallery.length >= MAX_GALLERY_IMAGES
+                      ? "Gallery limit reached"
+                      : "Upload Gallery Images"}
                   </span>
 
                   <span className="mt-1 text-xs text-slate-500">
@@ -1145,7 +1775,7 @@ export default function DestinationForm({
 
       {/* =====================================================
           SETTINGS
-          ===================================================== */}
+      ===================================================== */}
 
       <section className={sectionClass}>
         <div className="mb-6 flex items-start gap-3">
@@ -1213,12 +1843,12 @@ export default function DestinationForm({
 
       {/* =====================================================
           ACTIONS
-          ===================================================== */}
+      ===================================================== */}
 
       <div className="flex flex-col-reverse gap-3 border-t border-slate-200 pt-6 sm:flex-row sm:items-center sm:justify-end">
         <button
           type="button"
-          onClick={() => router.push("/admin/dashboard/destinations")}
+          onClick={handleCancel}
           disabled={loading}
           className="rounded-xl border border-slate-200 bg-white px-5 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
         >

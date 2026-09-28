@@ -20,7 +20,7 @@ const navLinks = [
   { name: "Destinations", href: "/destinations" },
   { name: "Packages", href: "/packages" },
   { name: "Hotels", href: "/hotels" },
-  { name: "Food & Travel", href: "/restaurants" },
+  // { name: "Food & Travel", href: "/restaurants" },
   { name: "About", href: "/about" },
   { name: "Contact", href: "/contact" },
 ];
@@ -30,7 +30,7 @@ const icons = {
   Destinations: Map,
   Packages: Package,
   Hotels: Hotel,
-  "Food & Travel": Utensils,
+  // "Food & Travel": Utensils,
   About: Info,
   Contact: Phone,
 };

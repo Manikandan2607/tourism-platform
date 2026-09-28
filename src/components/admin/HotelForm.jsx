@@ -13,10 +13,10 @@ import {
   Upload,
   X,
 } from "lucide-react";
-
 import { useRouter } from "next/navigation";
 
 import { adminApi } from "@/utils/adminApi";
+import { getToken } from "@/utils/api";
 
 /* -------------------------------------------------------------------------- */
 /* CONSTANTS                                                                  */
@@ -53,6 +53,50 @@ const HOTEL_CATEGORIES = [
   },
 ];
 
+const CURRENCIES = [
+  {
+    value: "INR",
+    label: "Indian Rupee (INR)",
+    symbol: "₹",
+  },
+  {
+    value: "USD",
+    label: "US Dollar (USD)",
+    symbol: "$",
+  },
+];
+
+const ALLOWED_IMAGE_TYPES = [
+  "image/jpeg",
+  "image/jpg",
+  "image/png",
+  "image/webp",
+  "image/gif",
+];
+
+const MAX_IMAGE_SIZE = 10 * 1024 * 1024;
+
+const NAME_REGEX = /^[\p{L}]+(?:[\s]+[\p{L}]+)*$/u;
+
+const SLUG_REGEX = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+
+const PHONE_REGEX = /^[0-9]{7,15}$/;
+
+const URL_REGEX = /^https?:\/\/[^\s]+$/i;
+
+/* -------------------------------------------------------------------------- */
+/* INPUT CLASSES                                                              */
+/* -------------------------------------------------------------------------- */
+
+const inputClass =
+  "w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-sm font-medium text-slate-900 shadow-sm outline-none transition placeholder:text-slate-400 focus:border-emerald-400 focus:ring-4 focus:ring-emerald-50 disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-500 disabled:placeholder:text-slate-400";
+
+const selectClass =
+  "w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-sm font-medium text-slate-900 shadow-sm outline-none transition focus:border-emerald-400 focus:ring-4 focus:ring-emerald-50 disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-500";
+
+const textareaClass =
+  "min-h-[150px] w-full resize-y rounded-xl border border-slate-200 bg-white px-3.5 py-3 text-sm font-medium leading-6 text-slate-900 shadow-sm outline-none transition placeholder:text-slate-400 focus:border-emerald-400 focus:ring-4 focus:ring-emerald-50 disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-500 disabled:placeholder:text-slate-400";
+
 /* -------------------------------------------------------------------------- */
 /* HELPERS                                                                    */
 /* -------------------------------------------------------------------------- */
@@ -64,22 +108,29 @@ function slugify(value = "") {
     .toLowerCase()
     .replace(/[^a-z0-9\s-]/g, "")
     .replace(/\s+/g, "-")
-    .replace(/-+/g, "-");
+    .replace(/-+/g, "-")
+    .replace(/^-+|-+$/g, "");
 }
 
 function normalizeImage(image) {
-  if (!image) return null;
+  if (!image) {
+    return null;
+  }
 
-  if (typeof image === "object" && image.url) {
+  if (
+    typeof image === "object" &&
+    typeof image.url === "string" &&
+    image.url.trim()
+  ) {
     return {
-      url: image.url,
-      publicId: image.publicId || "",
+      url: image.url.trim(),
+      publicId: typeof image.publicId === "string" ? image.publicId.trim() : "",
     };
   }
 
-  if (typeof image === "string") {
+  if (typeof image === "string" && image.trim()) {
     return {
-      url: image,
+      url: image.trim(),
       publicId: "",
     };
   }
@@ -92,7 +143,7 @@ function normalizeGallery(gallery) {
     return [];
   }
 
-  return gallery.map(normalizeImage).filter(Boolean);
+  return gallery.map((image) => normalizeImage(image)).filter(Boolean);
 }
 
 function normalizeAmenities(amenities) {
@@ -105,27 +156,58 @@ function normalizeAmenities(amenities) {
     .filter(Boolean);
 }
 
+function getDestinationId(destination) {
+  if (!destination) {
+    return "";
+  }
+
+  if (typeof destination === "object") {
+    return destination?._id || destination?.id || "";
+  }
+
+  return String(destination);
+}
+
+function getDestinationName(destination) {
+  if (!destination) {
+    return "-";
+  }
+
+  if (typeof destination === "object") {
+    return destination?.name || "-";
+  }
+
+  return String(destination);
+}
+
+function getCurrencySymbol(currency) {
+  const selected = CURRENCIES.find(
+    (item) => item.value === String(currency || "").toUpperCase(),
+  );
+
+  return selected?.symbol || "₹";
+}
+
 /* -------------------------------------------------------------------------- */
-/* INPUT CLASSES                                                              */
+/* SAFE JSON RESPONSE                                                         */
 /* -------------------------------------------------------------------------- */
 
-/*
- * IMPORTANT:
- *
- * Do not depend on a global ".input" class here.
- *
- * The screenshot problem was caused by inherited/global text colors.
- * Every input explicitly defines its own text, background and placeholder.
- */
+async function parseResponse(response) {
+  const text = await response.text();
 
-const inputClass =
-  "w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-sm font-medium text-slate-900 shadow-sm outline-none transition placeholder:text-slate-400 focus:border-emerald-400 focus:ring-4 focus:ring-emerald-50 disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-500 disabled:placeholder:text-slate-400";
+  if (!text) {
+    return null;
+  }
 
-const selectClass =
-  "w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-sm font-medium text-slate-900 shadow-sm outline-none transition focus:border-emerald-400 focus:ring-4 focus:ring-emerald-50 disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-500";
-
-const textareaClass =
-  "min-h-[150px] w-full resize-y rounded-xl border border-slate-200 bg-white px-3.5 py-3 text-sm font-medium leading-6 text-slate-900 shadow-sm outline-none transition placeholder:text-slate-400 focus:border-emerald-400 focus:ring-4 focus:ring-emerald-50 disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-500 disabled:placeholder:text-slate-400";
+  try {
+    return JSON.parse(text);
+  } catch {
+    return {
+      success: false,
+      message: text || "Unexpected server response.",
+    };
+  }
+}
 
 /* -------------------------------------------------------------------------- */
 /* COMPONENT                                                                  */
@@ -145,7 +227,10 @@ export default function HotelForm({
 
   const existingData = initialValues || initialData || null;
 
-  const isEdit = mode === "edit" || Boolean(hotelId);
+  const resolvedHotelId =
+    hotelId || existingData?._id || existingData?.id || null;
+
+  const isEdit = mode === "edit" || Boolean(resolvedHotelId);
 
   const isView = mode === "view" || readOnly;
 
@@ -159,24 +244,18 @@ export default function HotelForm({
     slug: "",
     description: "",
     category: "budget",
-
     priceMin: "",
     priceMax: "",
-
+    currency: "INR",
     amenitiesText: "",
-
     address: "",
     latitude: "",
     longitude: "",
-
     contactPhone: "",
     website: "",
-
     rating: "0",
-
     isFeatured: false,
     isActive: true,
-
     coverImage: null,
     gallery: [],
   });
@@ -184,13 +263,10 @@ export default function HotelForm({
   const [slugManuallyEdited, setSlugManuallyEdited] = useState(false);
 
   const [saving, setSaving] = useState(false);
-
   const [uploadingCover, setUploadingCover] = useState(false);
-
   const [uploadingGallery, setUploadingGallery] = useState(false);
 
   const [error, setError] = useState("");
-
   const [success, setSuccess] = useState("");
 
   /* ------------------------------------------------------------------------ */
@@ -208,37 +284,54 @@ export default function HotelForm({
 
     const amenities = normalizeAmenities(existingData.amenities);
 
+    const currency = String(existingData.currency || "INR").toUpperCase();
+
     setForm({
-      destination:
-        existingData.destination?._id || existingData.destination || "",
+      destination: getDestinationId(existingData.destination),
 
-      name: existingData.name || "",
+      name: typeof existingData.name === "string" ? existingData.name : "",
 
-      slug: existingData.slug || "",
+      slug: typeof existingData.slug === "string" ? existingData.slug : "",
 
-      description: existingData.description || "",
+      description:
+        typeof existingData.description === "string"
+          ? existingData.description
+          : "",
 
-      category: existingData.category || "budget",
+      category: HOTEL_CATEGORIES.some(
+        (item) => item.value === existingData.category,
+      )
+        ? existingData.category
+        : "budget",
 
       priceMin: existingData.pricePerNight?.min ?? "",
 
       priceMax: existingData.pricePerNight?.max ?? "",
 
+      currency: CURRENCIES.some((item) => item.value === currency)
+        ? currency
+        : "INR",
+
       amenitiesText: amenities.join("\n"),
 
-      address: existingData.address || "",
+      address:
+        typeof existingData.address === "string" ? existingData.address : "",
 
       latitude: existingData.latitude ?? "",
 
       longitude: existingData.longitude ?? "",
 
-      contactPhone: existingData.contactPhone || "",
+      contactPhone:
+        typeof existingData.contactPhone === "string"
+          ? existingData.contactPhone
+          : "",
 
-      website: existingData.website || "",
+      website:
+        typeof existingData.website === "string" ? existingData.website : "",
 
       rating: existingData.rating ?? "0",
 
-      isFeatured: Boolean(existingData.isFeatured),
+      isFeatured: existingData.isFeatured === true,
 
       isActive: existingData.isActive !== false,
 
@@ -271,7 +364,6 @@ export default function HotelForm({
 
   function handleSlugChange(value) {
     setSlugManuallyEdited(true);
-
     updateField("slug", slugify(value));
   }
 
@@ -287,55 +379,100 @@ export default function HotelForm({
   /* IMAGE UPLOAD                                                             */
   /* ------------------------------------------------------------------------ */
 
-  async function uploadImage(file) {
+  async function uploadImage(file, folder = "tourism/hotels") {
     if (!file) {
       return null;
     }
 
-    const allowedTypes = [
-      "image/jpeg",
-      "image/jpg",
-      "image/png",
-      "image/webp",
-      "image/gif",
-    ];
-
-    if (!allowedTypes.includes(file.type)) {
+    if (!ALLOWED_IMAGE_TYPES.includes(file.type)) {
       throw new Error("Only JPG, PNG, WEBP and GIF images are allowed.");
     }
 
-    const maxSize = 10 * 1024 * 1024;
-
-    if (file.size > maxSize) {
+    if (file.size > MAX_IMAGE_SIZE) {
       throw new Error("Image size must be 10MB or less.");
     }
+
+    const token = getToken();
+
+    if (!token) {
+      throw new Error("Admin authentication token is missing.");
+    }
+
+    /*
+     * IMPORTANT:
+     *
+     * Do NOT use adminApi.post() here if apiRequest
+     * automatically converts bodies to JSON.
+     *
+     * Do NOT set Content-Type manually.
+     *
+     * The browser automatically generates:
+     *
+     * multipart/form-data; boundary=...
+     */
 
     const body = new FormData();
 
     body.append("file", file);
+    body.append("folder", folder);
 
-    const response = await adminApi.post("/api/upload", body);
+    const response = await fetch("/api/upload", {
+      method: "POST",
 
-    if (!response?.success) {
-      throw new Error(response?.message || "Image upload failed.");
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+
+      body,
+    });
+
+    const data = await parseResponse(response);
+
+    if (!response.ok) {
+      throw new Error(
+        data?.message || `Image upload failed with status ${response.status}.`,
+      );
     }
 
-    return response.image;
+    if (!data?.success) {
+      throw new Error(data?.message || "Image upload failed.");
+    }
+
+    if (!data?.image?.url) {
+      throw new Error("Image upload completed but no image URL was returned.");
+    }
+
+    if (!data?.image?.publicId) {
+      throw new Error(
+        "Image upload completed but Cloudinary publicId was not returned.",
+      );
+    }
+
+    return {
+      url: data.image.url,
+      publicId: data.image.publicId,
+    };
   }
+
+  /* ------------------------------------------------------------------------ */
+  /* COVER UPLOAD                                                             */
+  /* ------------------------------------------------------------------------ */
 
   async function handleCoverUpload(event) {
     const file = event.target.files?.[0];
 
     event.target.value = "";
 
-    if (!file) return;
+    if (!file) {
+      return;
+    }
 
     try {
       setError("");
       setSuccess("");
       setUploadingCover(true);
 
-      const image = await uploadImage(file);
+      const image = await uploadImage(file, "tourism/hotels/cover");
 
       updateField("coverImage", image);
 
@@ -349,12 +486,23 @@ export default function HotelForm({
     }
   }
 
+  /* ------------------------------------------------------------------------ */
+  /* GALLERY UPLOAD                                                           */
+  /* ------------------------------------------------------------------------ */
+
   async function handleGalleryUpload(event) {
     const files = Array.from(event.target.files || []);
 
     event.target.value = "";
 
-    if (!files.length) return;
+    if (!files.length) {
+      return;
+    }
+
+    if (form.gallery.length + files.length > 50) {
+      setError("You can have a maximum of 50 gallery images.");
+      return;
+    }
 
     try {
       setError("");
@@ -364,11 +512,15 @@ export default function HotelForm({
       const uploaded = [];
 
       for (const file of files) {
-        const image = await uploadImage(file);
+        const image = await uploadImage(file, "tourism/hotels/gallery");
 
         if (image) {
           uploaded.push(image);
         }
+      }
+
+      if (!uploaded.length) {
+        throw new Error("No gallery images were uploaded.");
       }
 
       setForm((current) => ({
@@ -390,22 +542,56 @@ export default function HotelForm({
     }
   }
 
+  /* ------------------------------------------------------------------------ */
+  /* CLOUDINARY DELETE                                                        */
+  /* ------------------------------------------------------------------------ */
+
   async function deleteCloudinaryImage(publicId) {
     if (!publicId) {
       return;
     }
 
+    const token = getToken();
+
+    if (!token) {
+      console.error(
+        "Admin authentication token is missing while deleting image.",
+      );
+      return;
+    }
+
     try {
-      await adminApi.post("/api/upload/delete", {
-        publicId,
+      const response = await fetch("/api/upload/delete", {
+        method: "DELETE",
+
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+
+        body: JSON.stringify({
+          publicId,
+        }),
       });
+
+      const data = await parseResponse(response);
+
+      if (!response.ok || !data?.success) {
+        throw new Error(data?.message || "Failed to delete Cloudinary image.");
+      }
     } catch (error) {
       console.error("Failed to remove Cloudinary image:", error);
     }
   }
 
+  /* ------------------------------------------------------------------------ */
+  /* REMOVE COVER                                                             */
+  /* ------------------------------------------------------------------------ */
+
   async function removeCoverImage() {
-    if (isView) return;
+    if (isView) {
+      return;
+    }
 
     const image = form.coverImage;
 
@@ -416,8 +602,14 @@ export default function HotelForm({
     }
   }
 
+  /* ------------------------------------------------------------------------ */
+  /* REMOVE GALLERY IMAGE                                                     */
+  /* ------------------------------------------------------------------------ */
+
   async function removeGalleryImage(index) {
-    if (isView) return;
+    if (isView) {
+      return;
+    }
 
     const image = form.gallery[index];
 
@@ -447,31 +639,99 @@ export default function HotelForm({
   /* ------------------------------------------------------------------------ */
 
   function validateForm() {
+    const name = form.name.trim();
+
+    const slug = form.slug.trim().toLowerCase();
+
+    const description = form.description.trim();
+
+    const address = form.address.trim();
+
+    const contactPhone = form.contactPhone.trim();
+
+    const website = form.website.trim();
+
+    /* DESTINATION */
+
     if (!form.destination) {
       return "Please select a destination.";
     }
 
-    if (!form.name.trim()) {
+    /* NAME */
+
+    if (!name) {
       return "Hotel name is required.";
     }
 
-    if (!form.slug.trim()) {
+    if (name.length < 2) {
+      return "Hotel name must be at least 2 characters.";
+    }
+
+    if (name.length > 150) {
+      return "Hotel name cannot exceed 150 characters.";
+    }
+
+    if (!NAME_REGEX.test(name)) {
+      return "Hotel name can contain alphabets and spaces only.";
+    }
+
+    /* SLUG */
+
+    if (!slug) {
       return "Slug is required.";
     }
 
-    if (!form.description.trim()) {
+    if (slug.length > 150) {
+      return "Slug cannot exceed 150 characters.";
+    }
+
+    if (!SLUG_REGEX.test(slug)) {
+      return "Slug can contain lowercase letters, numbers, and hyphens only.";
+    }
+
+    /* DESCRIPTION */
+
+    if (!description) {
       return "Description is required.";
     }
 
-    if (!form.category) {
-      return "Category is required.";
+    if (description.length < 10) {
+      return "Description must be at least 10 characters.";
     }
 
-    if (form.priceMin === "" || form.priceMin === null) {
+    if (description.length > 5000) {
+      return "Description cannot exceed 5000 characters.";
+    }
+
+    /* CATEGORY */
+
+    if (
+      !HOTEL_CATEGORIES.some((category) => category.value === form.category)
+    ) {
+      return "Please select a valid hotel category.";
+    }
+
+    /* CURRENCY */
+
+    if (!CURRENCIES.some((currency) => currency.value === form.currency)) {
+      return "Please select a valid currency.";
+    }
+
+    /* PRICE */
+
+    if (
+      form.priceMin === "" ||
+      form.priceMin === null ||
+      form.priceMin === undefined
+    ) {
       return "Minimum price is required.";
     }
 
-    if (form.priceMax === "" || form.priceMax === null) {
+    if (
+      form.priceMax === "" ||
+      form.priceMax === null ||
+      form.priceMax === undefined
+    ) {
       return "Maximum price is required.";
     }
 
@@ -480,23 +740,83 @@ export default function HotelForm({
     const maxPrice = Number(form.priceMax);
 
     if (!Number.isFinite(minPrice) || minPrice < 0) {
-      return "Minimum price must be a valid positive number.";
+      return "Minimum price must be a valid non-negative number.";
     }
 
     if (!Number.isFinite(maxPrice) || maxPrice < 0) {
-      return "Maximum price must be a valid positive number.";
+      return "Maximum price must be a valid non-negative number.";
     }
 
     if (maxPrice < minPrice) {
       return "Maximum price cannot be lower than minimum price.";
     }
 
-    if (form.latitude !== "" && !Number.isFinite(Number(form.latitude))) {
-      return "Latitude must be a valid number.";
+    /* AMENITIES */
+
+    if (amenities.length > 50) {
+      return "You can add a maximum of 50 amenities.";
     }
 
-    if (form.longitude !== "" && !Number.isFinite(Number(form.longitude))) {
-      return "Longitude must be a valid number.";
+    for (const amenity of amenities) {
+      if (amenity.length > 100) {
+        return "Each amenity cannot exceed 100 characters.";
+      }
+    }
+
+    /* ADDRESS */
+
+    if (address.length > 500) {
+      return "Address cannot exceed 500 characters.";
+    }
+
+    /* PHONE */
+
+    if (contactPhone) {
+      if (!PHONE_REGEX.test(contactPhone)) {
+        return "Contact phone must contain 7 to 15 digits only.";
+      }
+    }
+
+    /* WEBSITE */
+
+    if (website) {
+      if (website.length > 500) {
+        return "Website cannot exceed 500 characters.";
+      }
+
+      if (!URL_REGEX.test(website)) {
+        return "Website must be a valid URL starting with http:// or https://.";
+      }
+    }
+
+    /* LATITUDE */
+
+    if (form.latitude !== "") {
+      const latitude = Number(form.latitude);
+
+      if (!Number.isFinite(latitude) || latitude < -90 || latitude > 90) {
+        return "Latitude must be between -90 and 90.";
+      }
+    }
+
+    /* LONGITUDE */
+
+    if (form.longitude !== "") {
+      const longitude = Number(form.longitude);
+
+      if (!Number.isFinite(longitude) || longitude < -180 || longitude > 180) {
+        return "Longitude must be between -180 and 180.";
+      }
+    }
+
+    /* RATING */
+
+    if (
+      form.rating === "" ||
+      form.rating === null ||
+      form.rating === undefined
+    ) {
+      return "Rating is required.";
     }
 
     const rating = Number(form.rating);
@@ -505,8 +825,48 @@ export default function HotelForm({
       return "Rating must be between 0 and 5.";
     }
 
+    /* COVER IMAGE */
+
     if (!form.coverImage?.url) {
       return "Cover image is required.";
+    }
+
+    if (!form.coverImage?.publicId) {
+      return "Please upload the cover image again before saving.";
+    }
+
+    if (!URL_REGEX.test(String(form.coverImage.url))) {
+      return "Cover image URL is invalid.";
+    }
+
+    /* GALLERY */
+
+    if (form.gallery.length > 50) {
+      return "You can add a maximum of 50 gallery images.";
+    }
+
+    for (const image of form.gallery) {
+      if (!image?.url) {
+        return "Every gallery image must have a valid URL.";
+      }
+
+      if (!image?.publicId) {
+        return "Every gallery image must have valid Cloudinary information.";
+      }
+
+      if (!URL_REGEX.test(String(image.url))) {
+        return "Every gallery image must have a valid URL.";
+      }
+    }
+
+    /* BOOLEAN */
+
+    if (typeof form.isFeatured !== "boolean") {
+      return "Featured status is invalid.";
+    }
+
+    if (typeof form.isActive !== "boolean") {
+      return "Active status is invalid.";
     }
 
     return "";
@@ -533,6 +893,11 @@ export default function HotelForm({
       return;
     }
 
+    if (isEdit && !resolvedHotelId) {
+      setError("Hotel ID is missing. Cannot update hotel.");
+      return;
+    }
+
     try {
       setSaving(true);
 
@@ -541,7 +906,7 @@ export default function HotelForm({
 
         name: form.name.trim(),
 
-        slug: slugify(form.slug),
+        slug: form.slug.trim().toLowerCase(),
 
         description: form.description.trim(),
 
@@ -552,7 +917,9 @@ export default function HotelForm({
           max: Number(form.priceMax),
         },
 
-        amenities,
+        currency: form.currency,
+
+        amenities: amenities.map((item) => item.trim()),
 
         address: form.address.trim(),
 
@@ -562,13 +929,22 @@ export default function HotelForm({
 
         rating: Number(form.rating),
 
-        isFeatured: Boolean(form.isFeatured),
+        isFeatured: form.isFeatured === true,
 
-        isActive: Boolean(form.isActive),
+        isActive: form.isActive === true,
 
-        coverImage: form.coverImage,
+        coverImage: {
+          url: form.coverImage.url,
 
-        gallery: form.gallery,
+          publicId: form.coverImage.publicId,
+        },
+
+        gallery: form.gallery
+          .filter((image) => image?.url && image?.publicId)
+          .map((image) => ({
+            url: image.url,
+            publicId: image.publicId,
+          })),
       };
 
       if (form.latitude !== "") {
@@ -581,9 +957,9 @@ export default function HotelForm({
 
       let response;
 
-      if (isEdit && hotelId) {
+      if (isEdit && resolvedHotelId) {
         response = await adminApi.put(
-          `/api/dashboard/hotels/${hotelId}`,
+          `/api/dashboard/hotels/${resolvedHotelId}`,
           payload,
         );
       } else {
@@ -602,7 +978,7 @@ export default function HotelForm({
       );
 
       if (onSuccess) {
-        onSuccess(response);
+        await onSuccess(response);
         return;
       }
 
@@ -625,7 +1001,9 @@ export default function HotelForm({
   /* ------------------------------------------------------------------------ */
 
   function handleCancel() {
-    if (saving) return;
+    if (saving) {
+      return;
+    }
 
     if (onCancel) {
       onCancel();
@@ -648,14 +1026,12 @@ export default function HotelForm({
   }
 
   /* ------------------------------------------------------------------------ */
-  /* FORM                                                                      */
+  /* FORM                                                                     */
   /* ------------------------------------------------------------------------ */
 
   return (
     <form onSubmit={handleSubmit} className="space-y-4 p-4 sm:p-6 lg:p-7">
-      {/* ------------------------------------------------------------------ */}
-      {/* ERROR / SUCCESS                                                     */}
-      {/* ------------------------------------------------------------------ */}
+      {/* ERROR */}
 
       {error ? (
         <div className="flex items-start gap-3 rounded-xl border border-red-200 bg-red-50 px-4 py-3">
@@ -667,6 +1043,8 @@ export default function HotelForm({
         </div>
       ) : null}
 
+      {/* SUCCESS */}
+
       {success ? (
         <div className="flex items-start gap-3 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3">
           <div className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-emerald-100 text-emerald-600">
@@ -677,16 +1055,13 @@ export default function HotelForm({
         </div>
       ) : null}
 
-      {/* ------------------------------------------------------------------ */}
-      {/* BASIC INFORMATION                                                   */}
-      {/* ------------------------------------------------------------------ */}
+      {/* BASIC INFORMATION */}
 
       <FormSection
         title="Basic Information"
         description="Hotel identity and classification."
       >
         <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
-          {/* DESTINATION */}
           <Field label="Destination" required>
             <select
               value={form.destination}
@@ -705,18 +1080,17 @@ export default function HotelForm({
             </select>
           </Field>
 
-          {/* HOTEL NAME */}
           <Field label="Hotel Name" required>
             <input
               type="text"
               value={form.name}
               onChange={(event) => handleNameChange(event.target.value)}
               placeholder="Example: Taj Hotel"
+              maxLength={150}
               className={inputClass}
             />
           </Field>
 
-          {/* SLUG */}
           <Field
             label="Slug"
             required
@@ -728,6 +1102,7 @@ export default function HotelForm({
                 value={form.slug}
                 onChange={(event) => handleSlugChange(event.target.value)}
                 placeholder="taj-hotel"
+                maxLength={150}
                 className={`${inputClass} flex-1`}
               />
 
@@ -742,7 +1117,6 @@ export default function HotelForm({
             </div>
           </Field>
 
-          {/* CATEGORY */}
           <Field label="Category" required>
             <select
               value={form.category}
@@ -759,9 +1133,7 @@ export default function HotelForm({
         </div>
       </FormSection>
 
-      {/* ------------------------------------------------------------------ */}
-      {/* DESCRIPTION                                                          */}
-      {/* ------------------------------------------------------------------ */}
+      {/* DESCRIPTION */}
 
       <FormSection
         title="Description"
@@ -772,30 +1144,43 @@ export default function HotelForm({
             value={form.description}
             onChange={(event) => updateField("description", event.target.value)}
             placeholder="Hotel description..."
+            maxLength={5000}
             className={textareaClass}
           />
         </Field>
       </FormSection>
 
-      {/* ------------------------------------------------------------------ */}
-      {/* PRICING                                                             */}
-      {/* ------------------------------------------------------------------ */}
+      {/* PRICING */}
 
       <FormSection
         title="Pricing"
-        description="Set the nightly price range and rating."
+        description="Set the nightly price range, currency and rating."
       >
-        <div className="grid grid-cols-1 gap-5 md:grid-cols-3">
+        <div className="grid grid-cols-1 gap-5 md:grid-cols-4">
+          <Field label="Currency" required>
+            <select
+              value={form.currency}
+              onChange={(event) => updateField("currency", event.target.value)}
+              className={selectClass}
+            >
+              {CURRENCIES.map((currency) => (
+                <option key={currency.value} value={currency.value}>
+                  {currency.label}
+                </option>
+              ))}
+            </select>
+          </Field>
+
           <Field label="Minimum Price" required>
             <div className="relative">
               <span className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-sm font-semibold text-slate-500">
-                ₹
+                {getCurrencySymbol(form.currency)}
               </span>
 
               <input
                 type="number"
                 min="0"
-                step="1"
+                step="0.01"
                 value={form.priceMin}
                 onChange={(event) =>
                   updateField("priceMin", event.target.value)
@@ -809,13 +1194,13 @@ export default function HotelForm({
           <Field label="Maximum Price" required>
             <div className="relative">
               <span className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-sm font-semibold text-slate-500">
-                ₹
+                {getCurrencySymbol(form.currency)}
               </span>
 
               <input
                 type="number"
                 min="0"
-                step="1"
+                step="0.01"
                 value={form.priceMax}
                 onChange={(event) =>
                   updateField("priceMax", event.target.value)
@@ -841,9 +1226,7 @@ export default function HotelForm({
         </div>
       </FormSection>
 
-      {/* ------------------------------------------------------------------ */}
-      {/* AMENITIES                                                            */}
-      {/* ------------------------------------------------------------------ */}
+      {/* AMENITIES */}
 
       <FormSection title="Amenities" description="Enter one amenity per line.">
         <Field label="Amenities">
@@ -871,9 +1254,7 @@ export default function HotelForm({
         ) : null}
       </FormSection>
 
-      {/* ------------------------------------------------------------------ */}
-      {/* LOCATION                                                            */}
-      {/* ------------------------------------------------------------------ */}
+      {/* LOCATION */}
 
       <FormSection
         title="Location & Contact"
@@ -886,18 +1267,24 @@ export default function HotelForm({
               value={form.address}
               onChange={(event) => updateField("address", event.target.value)}
               placeholder="Hotel address"
+              maxLength={500}
               className={inputClass}
             />
           </Field>
 
-          <Field label="Contact Phone">
+          <Field label="Contact Phone" description="7 - 15 digits">
             <input
-              type="text"
+              type="tel"
+              inputMode="numeric"
               value={form.contactPhone}
               onChange={(event) =>
-                updateField("contactPhone", event.target.value)
+                updateField(
+                  "contactPhone",
+                  event.target.value.replace(/\D/g, ""),
+                )
               }
-              placeholder="+91 98765 43210"
+              placeholder="9876543210"
+              maxLength={15}
               className={inputClass}
             />
           </Field>
@@ -908,13 +1295,16 @@ export default function HotelForm({
               value={form.website}
               onChange={(event) => updateField("website", event.target.value)}
               placeholder="https://example.com"
+              maxLength={500}
               className={inputClass}
             />
           </Field>
 
-          <Field label="Latitude" description="Negative values are allowed.">
+          <Field label="Latitude" description="-90 to 90">
             <input
               type="number"
+              min="-90"
+              max="90"
               step="any"
               value={form.latitude}
               onChange={(event) => updateField("latitude", event.target.value)}
@@ -923,9 +1313,11 @@ export default function HotelForm({
             />
           </Field>
 
-          <Field label="Longitude" description="Negative values are allowed.">
+          <Field label="Longitude" description="-180 to 180">
             <input
               type="number"
+              min="-180"
+              max="180"
               step="any"
               value={form.longitude}
               onChange={(event) => updateField("longitude", event.target.value)}
@@ -936,9 +1328,7 @@ export default function HotelForm({
         </div>
       </FormSection>
 
-      {/* ------------------------------------------------------------------ */}
-      {/* COVER IMAGE                                                         */}
-      {/* ------------------------------------------------------------------ */}
+      {/* COVER IMAGE */}
 
       <FormSection
         title="Cover Image"
@@ -978,15 +1368,14 @@ export default function HotelForm({
                 accept="image/jpeg,image/jpg,image/png,image/webp,image/gif"
                 onChange={handleCoverUpload}
                 className="hidden"
+                disabled={uploadingCover}
               />
             </label>
           </div>
         ) : null}
       </FormSection>
 
-      {/* ------------------------------------------------------------------ */}
-      {/* GALLERY                                                             */}
-      {/* ------------------------------------------------------------------ */}
+      {/* GALLERY */}
 
       <FormSection
         title="Gallery"
@@ -1008,7 +1397,7 @@ export default function HotelForm({
                 <button
                   type="button"
                   onClick={() => removeGalleryImage(index)}
-                  className="absolute right-2 top-2 flex h-8 w-8 items-center justify-center rounded-lg bg-white/95 text-red-500 opacity-100 shadow-md transition hover:bg-red-50"
+                  className="absolute right-2 top-2 flex h-8 w-8 items-center justify-center rounded-lg bg-white/95 text-red-500 shadow-md transition hover:bg-red-50"
                 >
                   <Trash2 size={15} />
                 </button>
@@ -1051,9 +1440,7 @@ export default function HotelForm({
         </div>
       </FormSection>
 
-      {/* ------------------------------------------------------------------ */}
-      {/* SETTINGS                                                            */}
-      {/* ------------------------------------------------------------------ */}
+      {/* SETTINGS */}
 
       <FormSection
         title="Settings"
@@ -1076,9 +1463,7 @@ export default function HotelForm({
         </div>
       </FormSection>
 
-      {/* ------------------------------------------------------------------ */}
-      {/* ACTIONS                                                             */}
-      {/* ------------------------------------------------------------------ */}
+      {/* ACTIONS */}
 
       <div className="flex flex-col-reverse gap-3 border-t border-slate-100 pt-5 sm:flex-row sm:justify-end">
         <button
@@ -1099,11 +1484,13 @@ export default function HotelForm({
           {saving ? (
             <>
               <LoaderCircle size={17} className="animate-spin" />
+
               {isEdit ? "Updating..." : "Creating..."}
             </>
           ) : (
             <>
               <Check size={17} />
+
               {isEdit ? "Update Hotel" : "Create Hotel"}
             </>
           )}
@@ -1145,6 +1532,7 @@ function Field({ label, required = false, description, children }) {
       <div className="mb-2 flex items-center justify-between gap-3">
         <label className="text-xs font-bold text-slate-700">
           {label}
+
           {required ? <span className="ml-1 text-red-500">*</span> : null}
         </label>
 
@@ -1232,9 +1620,10 @@ function ImageUploadBox({ uploading, onChange, multiple }) {
 /* -------------------------------------------------------------------------- */
 
 function ViewMode({ form, amenities }) {
+  const currencySymbol = getCurrencySymbol(form.currency);
+
   return (
     <>
-      {/* COVER */}
       {form.coverImage?.url ? (
         <div className="overflow-hidden rounded-2xl border border-slate-200">
           <img
@@ -1245,7 +1634,6 @@ function ViewMode({ form, amenities }) {
         </div>
       ) : null}
 
-      {/* TITLE */}
       <div>
         <div className="flex flex-wrap items-center gap-2">
           <h2 className="text-xl font-bold text-slate-900">
@@ -1275,10 +1663,12 @@ function ViewMode({ form, amenities }) {
         </p>
       </div>
 
-      {/* BASIC */}
       <ViewSection title="Basic Information">
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
-          <ViewItem label="Destination" value={form.destination} />
+          <ViewItem
+            label="Destination"
+            value={getDestinationName(form.destination)}
+          />
 
           <ViewItem label="Hotel Name" value={form.name} />
 
@@ -1286,14 +1676,20 @@ function ViewMode({ form, amenities }) {
 
           <ViewItem label="Category" value={form.category} />
 
+          <ViewItem label="Currency" value={form.currency || "INR"} />
+
           <ViewItem
             label="Minimum Price"
-            value={form.priceMin !== "" ? `₹${form.priceMin}` : "-"}
+            value={
+              form.priceMin !== "" ? `${currencySymbol}${form.priceMin}` : "-"
+            }
           />
 
           <ViewItem
             label="Maximum Price"
-            value={form.priceMax !== "" ? `₹${form.priceMax}` : "-"}
+            value={
+              form.priceMax !== "" ? `${currencySymbol}${form.priceMax}` : "-"
+            }
           />
 
           <ViewItem
@@ -1303,7 +1699,6 @@ function ViewMode({ form, amenities }) {
         </div>
       </ViewSection>
 
-      {/* AMENITIES */}
       <ViewSection title="Amenities">
         {amenities.length ? (
           <div className="flex flex-wrap gap-2">
@@ -1321,7 +1716,6 @@ function ViewMode({ form, amenities }) {
         )}
       </ViewSection>
 
-      {/* LOCATION */}
       <ViewSection title="Location & Contact">
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <ViewItem label="Address" value={form.address || "-"} />
@@ -1342,7 +1736,6 @@ function ViewMode({ form, amenities }) {
         </div>
       </ViewSection>
 
-      {/* GALLERY */}
       {form.gallery?.length ? (
         <ViewSection title="Gallery">
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
