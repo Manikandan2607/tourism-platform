@@ -147,7 +147,7 @@ export default function HotelDetailsPage() {
     return (
       <div className="min-h-full bg-emerald-50/30">
         <div className="mx-auto max-w-7xl p-4 sm:p-6 lg:p-8">
-          <div className="rounded-2xl border border-emerald-100 bg-white p-8 text-center">
+          <div className="rounded-2xl border border-emerald-100 bg-white p-5 text-center sm:p-8">
             <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-xl bg-emerald-50 text-emerald-600">
               <Building2 size={22} />
             </div>

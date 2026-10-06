@@ -78,7 +78,7 @@ export default function DestinationPage() {
   if (loading) {
     return (
       <div className="p-6">
-        <div className="rounded-xl border border-slate-200 bg-white p-8 text-center shadow-sm">
+        <div className="rounded-xl border border-slate-200 bg-white p-5 text-center shadow-sm sm:p-8">
 
           <div className="mx-auto h-8 w-8 animate-spin rounded-full border-4 border-slate-200 border-t-indigo-600" />
 
@@ -131,7 +131,7 @@ export default function DestinationPage() {
     return (
       <div className="p-6">
 
-        <div className="rounded-xl border border-slate-200 bg-white p-8 text-center shadow-sm">
+        <div className="rounded-xl border border-slate-200 bg-white p-5 text-center shadow-sm sm:p-8">
 
           <h1 className="text-lg font-semibold text-slate-900">
             Destination not found

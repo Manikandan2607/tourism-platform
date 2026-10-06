@@ -1405,7 +1405,7 @@ export default function HotelForm({
             ))}
           </div>
         ) : (
-          <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50/60 p-8 text-center">
+          <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50/60 p-5 text-center sm:p-8">
             <ImageIcon size={28} className="mx-auto text-slate-400" />
 
             <p className="mt-2 text-sm font-medium text-slate-600">

@@ -551,7 +551,7 @@ export default function InquiriesPage() {
 
           <div className="overflow-hidden rounded-2xl border border-emerald-100 bg-white shadow-sm">
             {inquiries.length === 0 ? (
-              <div className="p-12 text-center">
+              <div className="p-6 text-center sm:p-12">
                 <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-xl bg-emerald-50 text-emerald-600">
                   <Mail size={22} />
                 </div>

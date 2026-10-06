@@ -69,7 +69,7 @@ export default function AdminModal({
       }}
     >
       <div
-        className={`w-full ${maxWidth} max-h-[92vh] overflow-hidden rounded-2xl border border-emerald-100 bg-white shadow-2xl transition-all duration-200 ${
+        className={`w-full ${maxWidth} max-h-[92dvh] overflow-hidden rounded-2xl border border-emerald-100 bg-white shadow-2xl transition-all duration-200 ${
           visible
             ? "translate-y-0 scale-100 opacity-100"
             : "translate-y-3 scale-[0.98] opacity-0"
@@ -112,7 +112,7 @@ export default function AdminModal({
           </button>
         </div>
 
-        <div className="max-h-[calc(92vh-80px)] overflow-y-auto">
+        <div className="max-h-[calc(92dvh-80px)] overflow-y-auto">
           {children}
         </div>
       </div>

@@ -193,7 +193,7 @@ function RestaurantDetails({ restaurant }) {
             ))}
           </div>
         ) : (
-          <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50 p-8 text-center">
+          <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50 p-5 text-center sm:p-8">
             <p className="text-sm text-slate-400">
               No gallery images available.
             </p>

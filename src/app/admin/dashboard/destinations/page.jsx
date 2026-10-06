@@ -202,7 +202,7 @@ export default function DestinationsPage() {
     return (
       <div className="min-h-full bg-emerald-50/30 p-4 sm:p-6 lg:p-8">
         <div className="mx-auto max-w-7xl">
-          <div className="rounded-2xl border border-emerald-100 bg-white p-10 text-center shadow-sm">
+          <div className="rounded-2xl border border-emerald-100 bg-white p-6 text-center shadow-sm sm:p-10">
             <RefreshCw className="mx-auto h-7 w-7 animate-spin text-emerald-600" />
 
             <p className="mt-3 text-sm font-medium text-slate-500">
