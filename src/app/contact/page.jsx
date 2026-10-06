@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 
@@ -84,7 +84,7 @@ function findItem(items, value, nameGetter) {
    CONTACT PAGE
 ========================================================= */
 
-export default function ContactPage() {
+function ContactPageContent() {
   const searchParams = useSearchParams();
 
   const [destinations, setDestinations] = useState([]);
@@ -878,5 +878,13 @@ export default function ContactPage() {
 
       <Footer />
     </>
+  );
+}
+
+export default function ContactPage() {
+  return (
+    <Suspense fallback={null}>
+      <ContactPageContent />
+    </Suspense>
   );
 }
