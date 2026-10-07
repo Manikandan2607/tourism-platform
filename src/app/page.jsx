@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import {
+  ArrowLeft,
   ArrowRight,
   CarFront,
   Headphones,
@@ -19,7 +20,7 @@ import Navbar from "@/components/public/Navbar";
 import Footer from "@/components/public/Footer";
 
 /* =========================================================
-   HERO BACKGROUND
+   CONSTANTS
    ========================================================= */
 
 const HERO_BG = "/images/travel-hero-bg.png";
@@ -66,10 +67,6 @@ function normalizeImageUrl(value) {
 
   return "";
 }
-
-/* =========================================================
-   GET IMAGE URL
-   ========================================================= */
 
 function getImageUrl(item) {
   if (!item) return "";
@@ -214,11 +211,7 @@ export default function HomePage() {
 
         const data = await response.json();
 
-        console.log("DESTINATIONS API RESPONSE:", data);
-
         const items = extractItems(data, ["destinations", "results"]);
-
-        console.log("DESTINATION ITEMS:", items);
 
         setDestinations(Array.isArray(items) ? items : []);
       } catch (error) {
@@ -275,21 +268,30 @@ export default function HomePage() {
   return (
     <>
       {/* ===================================================
-          GLOBAL ANIMATION STYLES
-
-          IMPORTANT:
-          Do NOT use <style jsx global> here.
-          That was causing the hydration mismatch.
-          A normal style tag keeps the server/client markup
-          identical.
+          GLOBAL STYLES
           =================================================== */}
 
       <style
         dangerouslySetInnerHTML={{
           __html: `
+            /* =================================================
+               BASIC ANIMATIONS
+               ================================================= */
+
+            @keyframes softFloat {
+              0%,
+              100% {
+                transform: translateY(0);
+              }
+
+              50% {
+                transform: translateY(-9px);
+              }
+            }
+
             @keyframes confidenceLoop {
               0% {
-                transform: translateY(0px) scale(1);
+                transform: translateY(0) scale(1);
               }
 
               8% {
@@ -297,29 +299,92 @@ export default function HomePage() {
               }
 
               18% {
-                transform: translateY(0px) scale(1);
+                transform: translateY(0) scale(1);
               }
 
               100% {
-                transform: translateY(0px) scale(1);
+                transform: translateY(0) scale(1);
               }
             }
 
-            @keyframes softFloat {
-              0%,
-              100% {
-                transform: translateY(0px);
+            @keyframes shineMove {
+              0% {
+                transform: translateX(-130%);
               }
 
-              50% {
-                transform: translateY(-8px);
+              100% {
+                transform: translateX(130%);
               }
+            }
+
+            @keyframes whySstMarqueeLeft {
+              0% {
+                transform: translate3d(0, 0, 0);
+              }
+
+              100% {
+                transform: translate3d(-50%, 0, 0);
+              }
+            }
+
+            /* =================================================
+               MARQUEE MOTION
+               Interactive JS marquee handles both
+               auto-looping and touch / mouse dragging.
+               ================================================= */
+
+                        .sst-marquee-viewport {
+              position: relative;
+              width: 100%;
+              overflow: hidden;
+              cursor: grab;
+              touch-action: pan-y;
+              user-select: none;
+              -webkit-user-select: none;
+              -webkit-tap-highlight-color: transparent;
+              overscroll-behavior-x: contain;
+              overscroll-behavior-y: auto;
+              scrollbar-width: none;
+              -ms-overflow-style: none;
+            }
+
+            .sst-marquee-viewport:active {
+              cursor: grabbing;
+            }
+
+            .sst-marquee-viewport::-webkit-scrollbar {
+              display: none;
+            }
+
+            .sst-marquee-track {
+              display: flex;
+              width: max-content;
+              user-select: none;
+              -webkit-user-select: none;
+              will-change: transform;
+              transform: translate3d(0, 0, 0);
+            }
+
+            .sst-marquee-group {
+              display: flex;
+              flex-shrink: 0;
+              gap: clamp(0.85rem, 1.35vw, 1.25rem);
+              padding-right: clamp(0.85rem, 1.35vw, 1.25rem);
+            }
+
+            /* =================================================
+               VEHICLE
+               ================================================= */
+
+            .vehicle-float {
+              animation:
+                vehicleFloat 5s ease-in-out infinite;
             }
 
             @keyframes vehicleFloat {
               0%,
               100% {
-                transform: translateY(0px);
+                transform: translateY(0);
               }
 
               50% {
@@ -327,506 +392,1176 @@ export default function HomePage() {
               }
             }
 
-            @keyframes shineMove {
-              0% {
-                transform: translateX(-120%);
-              }
-
-              100% {
-                transform: translateX(120%);
-              }
-            }
-
-            .confidence-loop {
-              animation-name: confidenceLoop;
-              animation-duration: 5s;
-              animation-timing-function: ease-in-out;
-              animation-iteration-count: infinite;
-            }
-
-            .soft-float {
-              animation: softFloat 4s ease-in-out infinite;
-            }
-
-            .vehicle-float {
-              animation: vehicleFloat 5s ease-in-out infinite;
-            }
+            /* =================================================
+               REVEAL
+               ================================================= */
 
             .reveal-hidden {
               opacity: 0;
-              transform: translateY(45px) scale(0.97);
+              transform:
+                translateY(35px)
+                scale(0.98);
             }
 
             .reveal-visible {
               opacity: 1;
-              transform: translateY(0) scale(1);
+              transform:
+                translateY(0)
+                scale(1);
             }
 
             .reveal-transition {
               transition:
                 opacity 0.75s ease,
-                transform 0.75s cubic-bezier(0.22, 1, 0.36, 1);
+                transform 0.75s
+                cubic-bezier(
+                  0.22,
+                  1,
+                  0.36,
+                  1
+                );
             }
 
-            /* =================================================
-               HERO VEHICLE - 100% DESKTOP FIT
-               Keeps the full vehicle visible without clipping.
-               ================================================= */
-
-            #vehicles {
-              overflow: visible;
+            .sst-letter {
+              display: inline-block;
+              opacity: 0;
+              transform: translate3d(0, 0.65em, 0) rotateX(-55deg);
+              transform-origin: 50% 100%;
+              transition: opacity 0.5s ease, transform 0.7s cubic-bezier(0.22, 1, 0.36, 1);
+              will-change: opacity, transform;
             }
 
-            #vehicles img {
-              width: 100%;
-              height: auto;
-              max-width: 700px;
-              object-fit: contain;
-              object-position: center bottom;
-            }
-
-            .sst-final-cta {
-              border-radius: 26px;
-            }
-
-            .sst-final-cta-title {
-              font-size: 32px;
-              line-height: 1.08;
-              letter-spacing: -1px;
-            }
-
-            @media (min-width: 640px) {
-              .sst-final-cta-title {
-                font-size: 36px;
-              }
-            }
-
-            @media (min-width: 1024px) {
-              #vehicles img {
-                max-width: 680px;
-              }
-
-              .sst-final-cta {
-                border-radius: 36px;
-              }
-
-              .sst-final-cta-title {
-                font-size: 48px;
-              }
-            }
-
-            @media (max-width: 1023px) {
-              #vehicles {
-                transform: none;
-              }
-            }
-
-            @media (max-width: 639px) {
-              #vehicles img {
-                max-width: 100%;
-              }
-
-              .sst-final-cta {
-                padding: 42px 20px !important;
-              }
+            .sst-letter-visible {
+              opacity: 1;
+              transform: translate3d(0, 0, 0) rotateX(0deg);
             }
 
             @media (prefers-reduced-motion: reduce) {
-              .confidence-loop,
-              .soft-float,
-              .vehicle-float {
-                animation: none !important;
-              }
-
-              .reveal-hidden {
-                opacity: 1 !important;
-                transform: none !important;
-              }
-
-              .reveal-transition {
-                transition: none !important;
+              .sst-letter {
+                opacity: 1;
+                transform: none;
+                transition: none;
               }
             }
 
+            /* =================================================
+               HOME SYSTEM
+               ================================================= */
 
-/* =========================================================
-   SST RESPONSIVE SYSTEM
-   Fluid sizing keeps the composition proportional at desktop,
-   tablet, mobile and browser zoom levels.
-   ========================================================= */
-.sst-home {
-  --sst-gutter: clamp(1rem, 3.2vw, 4rem);
-  --sst-max: 1380px;
+            .sst-home {
+              --sst-gutter:
+                clamp(
+                  1rem,
+                  3.2vw,
+                  4rem
+                );
+
+              --sst-max: 1380px;
+              overflow-x: hidden;
+            }
+
+            /* =================================================
+               HERO
+               ================================================= */
+
+            .sst-hero {
+              min-height:
+                clamp(
+                  720px,
+                  62vw,
+                  940px
+                );
+            }
+
+            .sst-hero-content {
+              width:
+                min(
+                  100%,
+                  1450px
+                );
+
+              padding-left:
+                var(--sst-gutter);
+
+              padding-right:
+                var(--sst-gutter);
+
+              padding-top:
+                clamp(
+                  5.5rem,
+                  7vw,
+                  7rem
+                );
+
+              padding-bottom:
+                clamp(
+                  6rem,
+                  10vw,
+                  10rem
+                );
+            }
+
+            .sst-hero-grid {
+              min-height:
+                clamp(
+                  540px,
+                  55vw,
+                  680px
+                );
+
+              column-gap:
+                clamp(
+                  1rem,
+                  2vw,
+                  3rem
+                );
+            }
+
+            .sst-hero-title {
+              font-size:
+                clamp(
+                  2.45rem,
+                  5.2vw,
+                  4.9rem
+                );
+
+              line-height: 0.98;
+
+              letter-spacing:
+                clamp(
+                  -1.5px,
+                  -0.18vw,
+                  -2.5px
+                );
+            }
+
+            .sst-hero-description {
+              font-size:
+                clamp(
+                  0.95rem,
+                  1.15vw,
+                  1.125rem
+                );
+
+              line-height: 1.65;
+            }
+
+            .sst-vehicle-stage {
+              min-height:
+                clamp(
+                  300px,
+                  42vw,
+                  600px
+                );
+
+              overflow: visible;
+            }
+
+            .sst-vehicle-image {
+              width:
+                min(
+                  100%,
+                  clamp(
+                    420px,
+                    47vw,
+                    700px
+                  )
+                );
+
+              max-width: none;
+            }
+
+            /* =================================================
+               DESKTOP FEATURE STRIP
+               ================================================= */
+
+            .sst-desktop-features {
+              padding-left:
+                var(--sst-gutter);
+
+              padding-right:
+                var(--sst-gutter);
+            }
+
+            /* =================================================
+               SECTION COMMON
+               ================================================= */
+
+            .sst-section {
+              padding-left:
+                var(--sst-gutter);
+
+              padding-right:
+                var(--sst-gutter);
+
+              padding-top:
+                clamp(
+                  4rem,
+                  7vw,
+                  6rem
+                );
+
+              padding-bottom:
+                clamp(
+                  4rem,
+                  7vw,
+                  6rem
+                );
+            }
+
+            .sst-section-inner {
+              width:
+                min(
+                  100%,
+                  var(--sst-max)
+                );
+
+              margin-inline: auto;
+            }
+
+            .sst-section-title {
+              font-size:
+                clamp(
+                  2rem,
+                  4.5vw,
+                  3.4rem
+                );
+
+              line-height: 1.05;
+
+              letter-spacing:
+                -1.5px;
+            }
+
+            .sst-section-description {
+              font-size:
+                clamp(
+                  0.95rem,
+                  1.25vw,
+                  1.125rem
+                );
+
+              line-height: 1.75;
+            }
+
+            /* =================================================
+               DESTINATION CARD
+               ================================================= */
+
+            .sst-destination-card {
+              position: relative;
+              flex:
+                0 0
+                clamp(
+                  255px,
+                  24vw,
+                  330px
+                );
+
+              overflow: hidden;
+
+              border:
+                1px solid
+                rgba(
+                  19,
+                  128,
+                  101,
+                  0.12
+                );
+
+              border-radius:
+                clamp(
+                  22px,
+                  2.2vw,
+                  32px
+                );
+
+              background: white;
+
+              box-shadow: none;
+              transition: none;
+            }
+
+            .sst-destination-card-image {
+              position: relative;
+
+              height:
+                clamp(
+                  190px,
+                  19vw,
+                  245px
+                );
+
+              overflow: hidden;
+            }
+
+            .sst-destination-card-image img {
+              width: 100%;
+              height: 100%;
+              object-fit: cover;
+
+              transition:
+                transform 0.8s
+                cubic-bezier(
+                  0.22,
+                  1,
+                  0.36,
+                  1
+                ),
+                filter 0.5s ease;
+            }
+
+
+            .sst-destination-overlay {
+              position: absolute;
+              inset: 0;
+
+              background:
+                linear-gradient(
+                  to top,
+                  rgba(
+                    0,
+                    31,
+                    25,
+                    0.82
+                  ),
+                  rgba(
+                    0,
+                    31,
+                    25,
+                    0.08
+                  )
+                );
+            }
+
+            .sst-destination-content {
+              position: absolute;
+              left: 0;
+              right: 0;
+              bottom: 0;
+
+              padding:
+                clamp(
+                  1rem,
+                  2vw,
+                  1.5rem
+                );
+            }
+
+            .sst-destination-name {
+              font-size:
+                clamp(
+                  1.3rem,
+                  2vw,
+                  1.75rem
+                );
+
+              line-height: 1.1;
+
+              font-weight: 900;
+
+              color: white;
+
+              text-transform:
+                capitalize;
+
+              text-shadow:
+                0
+                3px
+                12px
+                rgba(
+                  0,
+                  0,
+                  0,
+                  0.28
+                );
+            }
+
+            .sst-destination-link {
+              display: inline-flex;
+
+              align-items: center;
+
+              gap: 0.45rem;
+
+              margin-top: 0.55rem;
+
+              font-size: 0.78rem;
+
+              font-weight: 700;
+
+              color:
+                #b8f3df;
+
+              opacity: 0.9;
+
+              transition:
+                opacity 0.3s ease,
+                gap 0.3s ease;
+            }
+
+
+            /* =================================================
+               PACKAGE CARD
+               ================================================= */
+
+            .sst-package-card {
+              position: relative;
+
+              flex:
+                0 0
+                clamp(
+                  260px,
+                  24vw,
+                  330px
+                );
+
+              overflow: hidden;
+
+              border:
+                1px solid
+                rgba(
+                  19,
+                  128,
+                  101,
+                  0.12
+                );
+
+              border-radius:
+                clamp(
+                  22px,
+                  2.2vw,
+                  32px
+                );
+
+              background: white;
+
+              box-shadow: none;
+              transition: none;
+            }
+
+            .sst-package-image {
+              position: relative;
+
+              height:
+                clamp(
+                  185px,
+                  18vw,
+                  235px
+                );
+
+              overflow: hidden;
+            }
+
+            .sst-package-image img {
+              width: 100%;
+              height: 100%;
+              object-fit: cover;
+
+              transition:
+                transform 0.8s
+                cubic-bezier(
+                  0.22,
+                  1,
+                  0.36,
+                  1
+                ),
+                filter 0.5s ease;
+            }
+
+
+            .sst-package-overlay {
+              position: absolute;
+              inset: 0;
+
+              background:
+                linear-gradient(
+                  to top,
+                  rgba(
+                    0,
+                    35,
+                    27,
+                    0.86
+                  ),
+                  rgba(
+                    0,
+                    35,
+                    27,
+                    0.06
+                  )
+                );
+            }
+
+            .sst-package-top {
+              position: absolute;
+              left: 0;
+              right: 0;
+              top: 0;
+
+              display: flex;
+              justify-content: space-between;
+              align-items: center;
+
+              padding:
+                1rem
+                1.1rem;
+            }
+
+            .sst-package-badge {
+              display: inline-flex;
+
+              align-items: center;
+
+              border-radius: 999px;
+
+              background:
+                rgba(
+                  255,
+                  255,
+                  255,
+                  0.16
+                );
+
+              border:
+                1px solid
+                rgba(
+                  255,
+                  255,
+                  255,
+                  0.28
+                );
+
+              padding:
+                0.42rem
+                0.7rem;
+
+              color: white;
+
+              font-size: 0.68rem;
+
+              font-weight: 800;
+
+              text-transform: uppercase;
+
+              letter-spacing:
+                0.08em;
+
+              backdrop-filter:
+                blur(12px);
+            }
+
+            .sst-package-content {
+              position: absolute;
+
+              left: 0;
+              right: 0;
+              bottom: 0;
+
+              padding:
+                1rem
+                1.25rem
+                1.25rem;
+            }
+
+            .sst-package-title {
+              color: white;
+
+              font-size:
+                clamp(
+                  1.3rem,
+                  2vw,
+                  1.65rem
+                );
+
+              line-height: 1.12;
+
+              font-weight: 900;
+            }
+
+            .sst-package-footer {
+              display: flex;
+
+              align-items: center;
+
+              justify-content:
+                space-between;
+
+              gap: 1rem;
+
+              padding:
+                1rem
+                1.15rem;
+            }
+
+            .sst-package-price-label {
+              color:
+                #7c9890;
+
+              font-size:
+                0.68rem;
+
+              font-weight: 800;
+
+              text-transform:
+                uppercase;
+
+              letter-spacing:
+                0.08em;
+            }
+
+            .sst-package-price {
+              margin-top:
+                0.25rem;
+
+              color:
+                #075847;
+
+              font-size:
+                clamp(
+                  1.05rem,
+                  1.7vw,
+                  1.3rem
+                );
+
+              font-weight: 900;
+            }
+
+            .sst-package-arrow {
+              display: flex;
+
+              height: 44px;
+              width: 44px;
+
+              flex-shrink: 0;
+
+              align-items: center;
+              justify-content: center;
+
+              border-radius: 50%;
+
+              background:
+                #e5f7f0;
+
+              color:
+                #07875f;
+
+              transition:
+                background 0.3s ease,
+                color 0.3s ease,
+                transform 0.3s ease;
+            }
+
+
+            /* =================================================
+               WHY SST
+               LEFT LOOP
+               ================================================= */
+
+            .sst-why-section {
+              --marquee-bg: #ffffff;
+            }
+
+            .sst-why-track {
+              animation: whySstMarqueeLeft 42s linear infinite;
+              will-change: transform;
+            }
+
+            .sst-why-track:hover {
+              animation-play-state:
+                paused;
+            }
+
+            .sst-why-card {
+              position: relative;
+
+              flex:
+                0 0
+                clamp(
+                  275px,
+                  27vw,
+                  330px
+                );
+
+              min-height:
+                235px;
+
+              border:
+                1px solid
+                #d9eee7;
+
+              border-radius:
+                28px;
+
+              background:
+                rgba(
+                  255,
+                  255,
+                  255,
+                  0.96
+                );
+
+              padding:
+                clamp(
+                  1.25rem,
+                  2vw,
+                  1.75rem
+                );
+
+              box-shadow:
+                0
+                12px
+                35px
+                rgba(
+                  0,
+                  80,
+                  60,
+                  0.07
+                );
+
+              transition:
+                transform 0.45s ease,
+                box-shadow 0.45s ease,
+                border-color 0.45s ease;
+            }
+
+            .sst-why-card:hover {
+              transform:
+                translateY(-9px);
+
+              border-color:
+                #a8dccd;
+
+              box-shadow:
+                0
+                20px
+                45px
+                rgba(
+                  0,
+                  80,
+                  60,
+                  0.13
+                ),
+                0
+                0
+                28px
+                rgba(
+                  7,
+                  135,
+                  95,
+                  0.09
+                );
+            }
+
+            .sst-why-icon {
+              display: flex;
+
+              height: 56px;
+              width: 56px;
+
+              align-items: center;
+              justify-content: center;
+
+              border-radius:
+                18px;
+
+              background:
+                #eaf8f3;
+
+              font-size:
+                1.55rem;
+
+              transition:
+                transform 0.4s ease,
+                background 0.4s ease;
+            }
+
+            .sst-why-card:hover
+              .sst-why-icon {
+              transform:
+                scale(1.1)
+                rotate(3deg);
+
+              background:
+                #dff5ec;
+            }
+
+            .sst-why-title {
+              margin-top:
+                1.35rem;
+
+              color:
+                #075847;
+
+              font-size:
+                1.15rem;
+
+              font-weight:
+                900;
+            }
+
+            .sst-why-text {
+              margin-top:
+                0.65rem;
+
+              color:
+                #718982;
+
+              font-size:
+                0.875rem;
+
+              line-height:
+                1.55;
+            }
+
+            .sst-why-line {
+              margin-top:
+                1.2rem;
+
+              height: 4px;
+
+              width: 42px;
+
+              border-radius:
+                999px;
+
+              background:
+                #07805f;
+
+              transition:
+                width 0.4s ease;
+            }
+
+            .sst-why-card:hover
+              .sst-why-line {
+              width: 82px;
+            }
+
+            /* =================================================
+               CTA
+               ================================================= */
+
+            .sst-final-cta {
+              width:
+                min(
+                  100%,
+                  var(--sst-max)
+                );
+
+              border-radius:
+                clamp(
+                  24px,
+                  3vw,
+                  38px
+                );
+
+              padding:
+                clamp(
+                  2.75rem,
+                  5vw,
+                  4rem
+                )
+                clamp(
+                  1.25rem,
+                  5vw,
+                  4rem
+                );
+            }
+
+            .sst-final-cta-title {
+              font-size:
+                clamp(
+                  2rem,
+                  5vw,
+                  3.75rem
+                );
+
+              line-height:
+                1.05;
+
+              letter-spacing:
+                -1.5px;
+            }
+
+            /* =================================================
+               TABLET
+               ================================================= */
+
+            @media (max-width: 1023px) {
+              .sst-hero {
+                min-height: auto;
+              }
+
+              .sst-hero-content {
+                padding-top:
+                  6rem;
+
+                padding-bottom:
+                  4rem;
+              }
+
+              .sst-hero-grid {
+                grid-template-columns:
+                  1fr;
+
+                min-height: 0;
+              }
+
+              .sst-hero-grid > div:first-child {
+                max-width:
+                  760px;
+              }
+
+              .sst-vehicle-stage {
+                min-height:
+                  clamp(
+                    280px,
+                    55vw,
+                    500px
+                  );
+
+                margin-top:
+                  0.5rem;
+              }
+
+              .sst-vehicle-image {
+                width:
+                  min(
+                    100%,
+                    650px
+                  );
+              }
 }
 
-.sst-home .sst-hero {
-  min-height: clamp(720px, 62vw, 940px);
-}
+            /* =================================================
+               MOBILE
+               ================================================= */
 
-.sst-home .sst-hero-content {
-  width: min(100%, 1450px);
-  padding-left: var(--sst-gutter);
-  padding-right: var(--sst-gutter);
-  padding-top: clamp(5.5rem, 7vw, 7rem);
-  padding-bottom: clamp(7rem, 11vw, 11rem);
-}
+            @media (max-width: 767px) {
+              .sst-hero-content {
+                padding-top:
+                  5.5rem;
 
-.sst-home .sst-hero-grid {
-  min-height: clamp(560px, 55vw, 680px);
-  column-gap: clamp(1rem, 2vw, 3rem);
-}
+                padding-bottom:
+                  2.5rem;
+              }
 
-.sst-home .sst-hero-title {
-  font-size: clamp(2.45rem, 5.2vw, 4.9rem);
-  line-height: .98;
-  letter-spacing: clamp(-1.5px, -.18vw, -2.5px);
-}
+              .sst-hero-title {
+                font-size:
+                  clamp(
+                    2.15rem,
+                    10.5vw,
+                    3.35rem
+                  );
+              }
 
-.sst-home .sst-hero-description {
-  font-size: clamp(.95rem, 1.15vw, 1.125rem);
-  line-height: 1.65;
-}
+              .sst-hero-description {
+                margin-top:
+                  1.1rem;
 
-.sst-home .sst-hero-mini-features {
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: clamp(.55rem, 1.2vw, 1rem);
-}
+                font-size:
+                  0.98rem;
+              }
 
-.sst-home .sst-hero-mini-features > div {
-  min-width: 0;
-}
+              .sst-vehicle-stage {
+                min-height:
+                  clamp(
+                    220px,
+                    67vw,
+                    360px
+                  );
+              }
 
-.sst-home .sst-hero-actions a {
-  min-height: clamp(2.75rem, 4vw, 3.5rem);
-  padding-left: clamp(1.1rem, 2vw, 1.75rem);
-  padding-right: clamp(1.1rem, 2vw, 1.75rem);
-}
+              .sst-vehicle-image {
+                width:
+                  min(
+                    112%,
+                    520px
+                  );
+              }
 
-.sst-home .sst-vehicle-stage {
-  min-height: clamp(300px, 42vw, 600px);
-  overflow: visible;
-}
+              .sst-section {
+                padding-top:
+                  3.75rem;
 
-.sst-home .sst-vehicle-image {
-  width: min(100%, clamp(420px, 47vw, 700px));
-  max-width: none;
-}
+                padding-bottom:
+                  3.75rem;
+              }
 
-.sst-home .sst-desktop-features {
-  padding-left: var(--sst-gutter);
-  padding-right: var(--sst-gutter);
-}
+              .sst-section-title {
+                font-size:
+                  clamp(
+                    2rem,
+                    8vw,
+                    2.65rem
+                  );
+              }
 
-.sst-home .sst-desktop-features > div {
-  width: min(100%, var(--sst-max));
-}
+              .sst-section-description {
+                font-size:
+                  0.98rem;
 
-.sst-home .sst-destinations-section,
-.sst-home .sst-packages-section,
-.sst-home .sst-why-section {
-  padding-left: var(--sst-gutter);
-  padding-right: var(--sst-gutter);
-  padding-top: clamp(4rem, 7vw, 6rem);
-  padding-bottom: clamp(4rem, 7vw, 6rem);
-}
+                line-height:
+                  1.7;
+              }
+.sst-destination-card {
+                flex-basis:
+                  min(
+                    76vw,
+                    300px
+                  );
+              }
 
-.sst-home .sst-destination-grid,
-.sst-home .sst-package-grid {
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: clamp(1rem, 1.7vw, 1.75rem);
-}
+              .sst-package-card {
+                flex-basis:
+                  min(
+                    76vw,
+                    300px
+                  );
+              }
 
-.sst-home .sst-destination-image {
-  height: clamp(210px, 20vw, 290px);
-}
+              .sst-destination-card-image {
+                height:
+                  205px;
+              }
 
-.sst-home .sst-package-image {
-  height: clamp(190px, 18vw, 250px);
-}
+              .sst-package-image {
+                height:
+                  200px;
+              }
 
-.sst-home .sst-cta-section {
-  padding-left: var(--sst-gutter);
-  padding-right: var(--sst-gutter);
-  padding-top: clamp(2.75rem, 5vw, 4rem);
-  padding-bottom: clamp(2.75rem, 5vw, 4rem);
-}
+              .sst-why-track {
+                animation-duration:
+                  32s;
+              }
 
-.sst-home .sst-final-cta {
-  width: min(100%, var(--sst-max));
-  padding-left: clamp(1.25rem, 5vw, 4rem);
-  padding-right: clamp(1.25rem, 5vw, 4rem);
-  padding-top: clamp(2.75rem, 5vw, 4rem);
-  padding-bottom: clamp(2.75rem, 5vw, 4rem);
-}
+              .sst-why-card {
+                flex-basis:
+                  min(
+                    78vw,
+                    320px
+                  );
+              }
+            }
 
-@media (max-width: 1199px) {
-  .sst-home .sst-hero {
-    min-height: auto;
-  }
+            /* =================================================
+               SMALL MOBILE
+               ================================================= */
 
-  .sst-home .sst-hero-grid {
-    min-height: 0;
-  }
+            @media (max-width: 480px) {
+              .sst-hero-content {
+                padding-top:
+                  5rem;
 
-  .sst-home .sst-hero-title {
-    font-size: clamp(2.5rem, 5.5vw, 4.25rem);
-  }
+                padding-bottom:
+                  1.75rem;
+              }
 
-  .sst-home .sst-vehicle-stage {
-    min-height: clamp(320px, 48vw, 520px);
-  }
+              .sst-hero-title {
+                font-size:
+                  clamp(
+                    2rem,
+                    10.8vw,
+                    2.65rem
+                  );
+              }
 
-  .sst-home .sst-vehicle-image {
-    width: min(100%, 620px);
-  }
+              .sst-vehicle-stage {
+                min-height:
+                  210px;
+              }
 
-  .sst-home .sst-desktop-features .grid {
-    min-height: 105px;
-    padding-left: 1.25rem;
-    padding-right: 1.25rem;
-  }
-}
+              .sst-vehicle-image {
+                width:
+                  118%;
 
-@media (max-width: 1023px) {
-  .sst-home .sst-hero-content {
-    padding-top: 6rem;
-    padding-bottom: 4.5rem;
-  }
+                max-width:
+                  500px;
+              }
 
-  .sst-home .sst-hero-grid {
-    grid-template-columns: 1fr;
-    gap: 1.25rem;
-  }
+              .sst-destination-card {
+                flex-basis:
+                  76vw;
+              }
 
-  .sst-home .sst-hero-grid > div:first-child {
-    max-width: 760px;
-  }
+              .sst-package-card {
+                flex-basis:
+                  76vw;
+              }
 
-  .sst-home .sst-hero-mini-features {
-    max-width: 760px;
-  }
+              .sst-destination-card-image {
+                height:
+                  220px;
+              }
 
-  .sst-home .sst-vehicle-stage {
-    min-height: clamp(280px, 55vw, 500px);
-    margin-top: .5rem;
-  }
+              .sst-package-image {
+                height:
+                  215px;
+              }
 
-  .sst-home .sst-vehicle-image {
-    width: min(100%, 650px);
-  }
+              .sst-why-card {
+                flex-basis:
+                  72vw;
+              }
+            }
 
-  .sst-home .sst-destination-grid,
-  .sst-home .sst-package-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-}
+            /* =================================================
+               REDUCED MOTION
+               ================================================= */
 
-@media (max-width: 767px) {
-  .sst-home .sst-hero-content {
-    padding-top: 5.5rem;
-    padding-bottom: 2.5rem;
-  }
+            @media (prefers-reduced-motion: reduce) {
+              .vehicle-float,
+              .sst-destination-track,
+              .sst-package-track,
+              .sst-why-track {
+                animation:
+                  none !important;
+              }
 
-  .sst-home .sst-hero-grid {
-    gap: 0;
-  }
+              .reveal-hidden {
+                opacity:
+                  1 !important;
 
-  .sst-home .sst-hero-title {
-    max-width: 100%;
-    font-size: clamp(2.15rem, 10.5vw, 3.35rem);
-  }
+                transform:
+                  none !important;
+              }
 
-  .sst-home .sst-hero-description {
-    margin-top: 1.1rem;
-    max-width: 100%;
-    font-size: .98rem;
-    line-height: 1.65;
-  }
-
-  .sst-home .sst-hero-mini-features {
-    margin-top: 1.25rem;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: .5rem;
-  }
-
-  .sst-home .sst-hero-mini-features > div > div:first-child {
-    height: 2.5rem;
-    width: 2.5rem;
-  }
-
-  .sst-home .sst-hero-mini-features > div > div:last-child > div:first-child {
-    font-size: .72rem;
-  }
-
-  .sst-home .sst-hero-mini-features > div > div:last-child > div:last-child {
-    font-size: .65rem;
-  }
-
-  .sst-home .sst-hero-actions {
-    margin-top: 1.35rem;
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: .65rem;
-  }
-
-  .sst-home .sst-hero-actions a {
-    width: 100%;
-    padding: .75rem .8rem;
-    font-size: .78rem;
-  }
-
-  .sst-home .sst-vehicle-stage {
-    min-height: clamp(220px, 67vw, 360px);
-    margin-top: .5rem;
-  }
-
-  .sst-home .sst-vehicle-image {
-    width: min(112%, 520px);
-  }
-
-  .sst-home .sst-destinations-section,
-  .sst-home .sst-packages-section,
-  .sst-home .sst-why-section {
-    padding-top: 3.5rem;
-    padding-bottom: 3.5rem;
-  }
-
-  .sst-home .sst-destination-grid,
-  .sst-home .sst-package-grid {
-    grid-template-columns: 1fr;
-    gap: 1rem;
-    margin-top: 2rem;
-  }
-
-  .sst-home .sst-destination-image {
-    height: clamp(210px, 58vw, 300px);
-  }
-
-  .sst-home .sst-package-image {
-    height: clamp(190px, 52vw, 270px);
-  }
-
-  .sst-home .sst-mobile-features {
-    padding-left: var(--sst-gutter);
-    padding-right: var(--sst-gutter);
-    padding-top: 1rem;
-    padding-bottom: 1rem;
-  }
-
-  .sst-home .sst-cta-section {
-    padding-top: 2rem;
-    padding-bottom: 2rem;
-  }
-
-  .sst-home .sst-final-cta {
-    border-radius: 24px;
-  }
-
-  .sst-home .sst-final-cta-title {
-    font-size: clamp(2rem, 8.5vw, 2.8rem);
-  }
-}
-
-@media (max-width: 480px) {
-  .sst-home .sst-hero-content {
-    padding-top: 5rem;
-    padding-bottom: 1.75rem;
-  }
-
-  .sst-home .sst-hero-title {
-    font-size: clamp(2rem, 10.8vw, 2.65rem);
-  }
-
-  .sst-home .sst-hero-mini-features {
-    gap: .35rem;
-  }
-
-  .sst-home .sst-hero-mini-features > div {
-    gap: .35rem;
-  }
-
-  .sst-home .sst-hero-mini-features > div > div:first-child {
-    height: 2.15rem;
-    width: 2.15rem;
-    border-radius: .8rem;
-  }
-
-  .sst-home .sst-hero-actions {
-    grid-template-columns: 1fr;
-  }
-
-  .sst-home .sst-vehicle-stage {
-    min-height: 210px;
-  }
-
-  .sst-home .sst-vehicle-image {
-    width: 118%;
-    max-width: 500px;
-  }
-
-  .sst-home .sst-destination-image {
-    height: 225px;
-  }
-
-  .sst-home .sst-package-image {
-    height: 215px;
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .sst-home .vehicle-float,
-  .sst-home .confidence-loop,
-  .sst-home .why-sst-marquee {
-    animation: none !important;
-  }
-}
-
+              .reveal-transition {
+                transition:
+                  none !important;
+              }
+            }
           `,
         }}
       />
 
-      <main className="sst-home min-h-screen overflow-x-hidden bg-[#f4faf7] text-[#073f35]">
+      <main className="sst-home min-h-screen bg-[#f4faf7] text-[#073f35]">
         {/* ===================================================
             HERO
             =================================================== */}
 
-        <section className="sst-hero relative min-h-[900px] overflow-hidden lg:min-h-[940px]">
-          {/* Background */}
-
+        <section className="sst-hero relative overflow-hidden">
           <img
             src={HERO_BG}
             alt=""
             className="absolute inset-0 h-full w-full object-cover object-center"
           />
 
-          {/* Left gradient */}
-
           <div className="absolute inset-0 bg-gradient-to-r from-[#f9fffc]/95 via-[#f9fffc]/72 via-45% to-transparent" />
-
-          {/* Bottom atmosphere */}
 
           <div className="absolute inset-x-0 bottom-0 h-[35%] bg-gradient-to-t from-[#063d34]/25 to-transparent" />
 
-          {/* Scenic highlight */}
-
           <div className="pointer-events-none absolute -left-40 top-56 h-[550px] w-[550px] rounded-full bg-white/30 blur-[120px]" />
-
-          {/* Navbar */}
 
           <div className="relative z-50">
             <Navbar />
           </div>
 
-          {/* =================================================
-              HERO CONTENT
-              ================================================= */}
-
-          <div className="sst-hero-content relative z-20 mx-auto max-w-[1450px] px-6 pb-44 pt-20 sm:px-10 lg:px-16 lg:pt-24">
-            <div className="sst-hero-grid grid min-h-[680px] items-center lg:grid-cols-[0.92fr_1.08fr]">
-              {/* LEFT CONTENT */}
+          <div className="sst-hero-content relative z-20 mx-auto">
+            <div className="sst-hero-grid grid items-center lg:grid-cols-[0.92fr_1.08fr]">
+              {/* LEFT */}
 
               <div className="relative z-30 max-w-[610px]">
-                <Reveal delay={0}>
+                <Reveal>
                   <div className="mb-6 inline-flex items-center gap-2 rounded-full border border-[#0c8065]/10 bg-[#e6f7f1]/85 px-5 py-2.5 text-sm font-semibold text-[#075847] shadow-sm backdrop-blur-md">
                     <MapPin size={17} strokeWidth={2.5} />
 
@@ -839,7 +1574,7 @@ export default function HomePage() {
                 </Reveal>
 
                 <Reveal delay={100}>
-                  <h1 className="sst-hero-title max-w-[650px] text-[48px] font-black leading-[0.98] tracking-[-2.5px] text-[#064d3f] sm:text-[58px] md:text-[66px] lg:text-[72px] xl:text-[78px]">
+                  <h1 className="sst-hero-title max-w-[650px] font-black text-[#064d3f]">
                     Travel in Comfort
                     <br />
                     with <span className="text-[#08795f]">SST Travels</span>
@@ -847,7 +1582,7 @@ export default function HomePage() {
                 </Reveal>
 
                 <Reveal delay={200}>
-                  <p className="sst-hero-description mt-7 max-w-[560px] text-[17px] leading-7 text-[#164f45] sm:text-[18px]">
+                  <p className="sst-hero-description mt-7 max-w-[560px] text-[#164f45]">
                     Experience the best travel with our premium{" "}
                     <strong className="font-extrabold text-[#064d3f]">
                       Force Traveller
@@ -859,7 +1594,7 @@ export default function HomePage() {
 
                 {/* MINI FEATURES */}
 
-                <div className="sst-hero-mini-features mt-8 grid max-w-[590px] grid-cols-1 gap-4 sm:grid-cols-3">
+                <div className="mt-8 grid max-w-[590px] grid-cols-1 gap-4 sm:grid-cols-3">
                   <Reveal delay={300}>
                     <MiniFeature
                       icon={<Users size={26} />}
@@ -888,7 +1623,7 @@ export default function HomePage() {
                 {/* BUTTONS */}
 
                 <Reveal delay={600}>
-                  <div className="sst-hero-actions mt-9 flex flex-col gap-3 sm:flex-row">
+                  <div className="mt-9 flex flex-col gap-3 sm:flex-row">
                     <Link
                       href="#vehicles"
                       className="group inline-flex items-center justify-center gap-3 rounded-full bg-[#07875f] px-7 py-4 text-sm font-bold text-white shadow-[0_14px_35px_rgba(0,100,75,0.25)] transition-all duration-300 hover:-translate-y-1 hover:bg-[#056f4e]"
@@ -910,76 +1645,58 @@ export default function HomePage() {
                 </Reveal>
               </div>
 
-              {/* =================================================
-                  VEHICLE
-                  ================================================= */}
+              {/* VEHICLE */}
 
               <Reveal delay={250}>
                 <div
                   id="vehicles"
-                  className="sst-vehicle-stage relative mt-8 flex min-h-[430px] items-center justify-center lg:mt-0 lg:min-h-[600px] lg:translate-y-[-18px]"
+                  className="sst-vehicle-stage relative mt-8 flex items-center justify-center lg:mt-0"
                 >
-                  {/* Ground shadow */}
-
                   <div className="absolute bottom-12 left-1/2 h-12 w-[62%] -translate-x-1/2 rounded-full bg-black/25 blur-3xl" />
 
-                  {/* Scenic glow */}
-
                   <div className="absolute right-[8%] top-[20%] h-[220px] w-[220px] rounded-full bg-white/20 blur-[85px]" />
-
-                  {/* Vehicle */}
 
                   <img
                     src="/images/force-traveller.png"
                     alt="SST Travels Force Traveller"
-                    className="sst-vehicle-image vehicle-float relative z-10 block h-auto w-full max-w-[690px] object-contain drop-shadow-[0_24px_30px_rgba(0,0,0,0.28)] sm:max-w-[650px] lg:max-w-[680px] xl:max-w-[700px]"
+                    className="sst-vehicle-image vehicle-float relative z-10 block h-auto object-contain drop-shadow-[0_24px_30px_rgba(0,0,0,0.28)]"
                   />
                 </div>
               </Reveal>
             </div>
           </div>
 
-          {/* =================================================
-              DESKTOP FEATURE STRIP
-              ================================================= */}
+          {/* DESKTOP FEATURES */}
 
-          <div className="sst-desktop-features absolute bottom-0 left-0 right-0 z-40 hidden px-5 pb-0 lg:block lg:px-10">
+          <div className="sst-desktop-features absolute bottom-0 left-0 right-0 z-40 hidden lg:block">
             <div className="mx-auto max-w-[1380px]">
               <div className="grid min-h-[125px] grid-cols-[1fr_1fr_1fr_1fr_1.65fr] items-center overflow-hidden rounded-t-[38px] border border-white/70 bg-[#f4fffb]/94 px-7 shadow-[0_-15px_45px_rgba(0,65,50,0.12)] backdrop-blur-xl xl:px-10">
-                <Reveal delay={0}>
-                  <BottomFeature
-                    icon={<Users size={27} />}
-                    title="10 – 17 Seater"
-                    subtitle="Multiple Options"
-                  />
-                </Reveal>
+                <BottomFeature
+                  icon={<Users size={27} />}
+                  title="10 – 17 Seater"
+                  subtitle="Multiple Options"
+                />
 
-                <Reveal delay={100}>
-                  <BottomFeature
-                    icon={<Snowflake size={27} />}
-                    title="AC & Comfortable"
-                    subtitle="Travel Experience"
-                  />
-                </Reveal>
+                <BottomFeature
+                  icon={<Snowflake size={27} />}
+                  title="AC & Comfortable"
+                  subtitle="Travel Experience"
+                />
 
-                <Reveal delay={200}>
-                  <BottomFeature
-                    icon={<Route size={27} />}
-                    title="Well Maintained"
-                    subtitle="Fleet"
-                  />
-                </Reveal>
+                <BottomFeature
+                  icon={<Route size={27} />}
+                  title="Well Maintained"
+                  subtitle="Fleet"
+                />
 
-                <Reveal delay={300}>
-                  <BottomFeature
-                    icon={<ShieldCheck size={27} />}
-                    title="24/7 Support"
-                    subtitle="During Your Trip"
-                  />
-                </Reveal>
+                <BottomFeature
+                  icon={<ShieldCheck size={27} />}
+                  title="24/7 Support"
+                  subtitle="During Your Trip"
+                />
 
                 <div className="flex h-full items-center justify-center border-l border-[#16856b]/20 pl-8">
-                  <div className="relative flex items-center gap-5">
+                  <div className="flex items-center gap-5">
                     <div className="text-right">
                       <div className="font-serif text-[23px] italic leading-6 text-[#086b57]">
                         Your Journey
@@ -996,14 +1713,6 @@ export default function HomePage() {
                       size={38}
                       className="rotate-[12deg] text-[#07875f]"
                     />
-
-                    <div className="flex items-end gap-1">
-                      <div className="h-7 w-10 rotate-[-15deg] rounded-t-full border-t-2 border-[#43b795]" />
-
-                      <div className="h-11 w-14 rotate-[8deg] rounded-t-full border-t-2 border-[#43b795]" />
-
-                      <div className="h-8 w-12 rotate-[-8deg] rounded-t-full border-t-2 border-[#43b795]" />
-                    </div>
                   </div>
                 </div>
               </div>
@@ -1012,51 +1721,44 @@ export default function HomePage() {
         </section>
 
         {/* ===================================================
-            MOBILE FEATURE STRIP
+            MOBILE FEATURES
             =================================================== */}
 
-        <section className="sst-mobile-features bg-[#effbf6] px-5 py-7 lg:hidden">
+        <section className="bg-[#effbf6] px-5 py-7 lg:hidden">
           <div className="grid grid-cols-2 gap-3">
-            <Reveal delay={0}>
-              <BottomFeature
-                icon={<Users size={24} />}
-                title="10 – 17 Seater"
-                subtitle="Multiple Options"
-              />
-            </Reveal>
+            <BottomFeature
+              icon={<Users size={24} />}
+              title="10 – 17 Seater"
+              subtitle="Multiple Options"
+            />
 
-            <Reveal delay={100}>
-              <BottomFeature
-                icon={<Snowflake size={24} />}
-                title="AC & Comfortable"
-                subtitle="Travel Experience"
-              />
-            </Reveal>
+            <BottomFeature
+              icon={<Snowflake size={24} />}
+              title="AC & Comfortable"
+              subtitle="Travel Experience"
+            />
 
-            <Reveal delay={200}>
-              <BottomFeature
-                icon={<Route size={24} />}
-                title="Well Maintained"
-                subtitle="Fleet"
-              />
-            </Reveal>
+            <BottomFeature
+              icon={<Route size={24} />}
+              title="Well Maintained"
+              subtitle="Fleet"
+            />
 
-            <Reveal delay={300}>
-              <BottomFeature
-                icon={<ShieldCheck size={24} />}
-                title="24/7 Support"
-                subtitle="During Your Trip"
-              />
-            </Reveal>
+            <BottomFeature
+              icon={<ShieldCheck size={24} />}
+              title="24/7 Support"
+              subtitle="During Your Trip"
+            />
           </div>
         </section>
 
         {/* ===================================================
             DESTINATIONS
+            → → →
             =================================================== */}
 
-        <section className="sst-destinations-section bg-[#f4faf7] px-6 py-24 lg:px-10">
-          <div className="mx-auto max-w-[1380px]">
+        <section className="sst-section bg-[#f4faf7]">
+          <div className="sst-section-inner">
             <Reveal>
               <SectionHeading
                 eyebrow="EXPLORE"
@@ -1066,119 +1768,41 @@ export default function HomePage() {
             </Reveal>
 
             {loadingDestinations ? (
-              <LoadingGrid count={3} />
+              <LoadingMarquee type="destination" />
             ) : destinationError ? (
               <EmptyState message={destinationError} />
             ) : destinations.length === 0 ? (
               <EmptyState message="No destinations available right now." />
             ) : (
-              <div className="sst-destination-grid mt-12 grid gap-7 md:grid-cols-2 lg:grid-cols-3">
-                {destinations.slice(0, 6).map((destination, index) => {
-                  const image = getImageUrl(destination);
-
-                  const destinationName =
-                    destination?.name ||
-                    destination?.title ||
-                    destination?.destinationName ||
-                    "Destination";
-
-                  const destinationId =
-                    destination?._id || destination?.id || destination?.slug;
-
-                  const destinationSlug =
-                    destination?.slug || destination?._id || destination?.id;
-
-                  return (
-                    <Reveal key={destinationId || index} delay={index * 130}>
-                      <Link
-                        href={`/destinations/${destinationSlug}`}
-                        className="group block overflow-hidden rounded-[30px] bg-white shadow-[0_15px_45px_rgba(0,70,55,0.08)] transition-all duration-500 hover:-translate-y-2 hover:shadow-[0_25px_60px_rgba(0,70,55,0.14)]"
-                      >
-                        {/* IMAGE */}
-
-                        <div className="sst-destination-image relative h-[290px] overflow-hidden bg-[#dcefe8]">
-                          {image ? (
-                            <img
-                              src={image}
-                              alt={destinationName}
-                              loading="lazy"
-                              decoding="async"
-                              className="block h-full w-full object-cover object-center transition-transform duration-700 group-hover:scale-110"
-                              onError={(event) => {
-                                console.error(
-                                  "Destination image failed:",
-                                  image,
-                                );
-
-                                event.currentTarget.onerror = null;
-
-                                event.currentTarget.src =
-                                  FALLBACK_DESTINATION_IMAGE;
-                              }}
-                            />
-                          ) : (
-                            <div className="flex h-full w-full items-center justify-center bg-gradient-to-br from-[#dff4ec] to-[#c9e8dd]">
-                              <div className="text-center">
-                                <MapPin
-                                  size={52}
-                                  className="mx-auto text-[#07875f]"
-                                />
-
-                                <p className="mt-3 text-sm font-semibold text-[#4c8174]">
-                                  Destination Image
-                                </p>
-                              </div>
-                            </div>
-                          )}
-
-                          <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/65 via-black/5 to-transparent" />
-
-                          <div className="absolute bottom-5 left-5 right-5">
-                            <h3 className="text-2xl font-bold text-white drop-shadow-lg">
-                              {destinationName}
-                            </h3>
-                          </div>
-                        </div>
-                      </Link>
-                    </Reveal>
-                  );
-                })}
-              </div>
+              <DestinationMarquee destinations={destinations} />
             )}
           </div>
         </section>
 
         {/* ===================================================
             WHY SST
+            ← ← ←
             =================================================== */}
 
         <section
           id="why-sst-travels"
-          className="sst-why-section relative scroll-mt-20 overflow-hidden bg-white px-6 py-24 lg:px-10"
+          className="sst-section sst-why-section relative overflow-hidden bg-white scroll-mt-20"
         >
-          {/* =================================================
-      BACKGROUND DECORATION
-      ================================================= */}
-
           <div className="pointer-events-none absolute -left-32 top-20 h-72 w-72 rounded-full bg-[#dff7ed] blur-3xl" />
 
           <div className="pointer-events-none absolute -right-32 bottom-10 h-80 w-80 rounded-full bg-[#e7f8f2] blur-3xl" />
 
-          <div className="relative mx-auto max-w-[1380px]">
-            {/* =================================================
-        SECTION HEADER
-        ================================================= */}
-
+          <div className="sst-section-inner relative">
             <div className="mx-auto max-w-3xl text-center">
               <div className="mb-4 inline-flex items-center rounded-full border border-[#bde8da] bg-[#effbf6] px-4 py-2 text-xs font-bold uppercase tracking-[0.18em] text-[#07805f]">
                 Why SST Travels
               </div>
 
-              <h2 className="text-3xl font-black tracking-[-1px] text-[#075847] sm:text-4xl lg:text-5xl">
+              <h2 className="sst-section-title font-black text-[#075847]">
                 Travel With Comfort & Confidence
               </h2>
 
-              <p className="mx-auto mt-5 max-w-2xl text-sm leading-7 text-[#648078] sm:text-base">
+              <p className="sst-section-description mx-auto mt-5 max-w-2xl text-[#648078]">
                 We believe every journey should be comfortable, affordable,
                 respectful and memorable. That is why SST Travels focuses on
                 giving every traveller a better experience from beginning to
@@ -1186,56 +1810,39 @@ export default function HomePage() {
               </p>
             </div>
 
-            {/* =================================================
-        LOOPING CARDS
-        ================================================= */}
-
-            <div className="relative mt-14 overflow-hidden">
-              {/* LEFT FADE */}
-              <div className="pointer-events-none absolute left-0 top-0 z-10 h-full w-16 bg-gradient-to-r from-white to-transparent sm:w-28" />
-
-              {/* RIGHT FADE */}
-              <div className="pointer-events-none absolute right-0 top-0 z-10 h-full w-16 bg-gradient-to-l from-white to-transparent sm:w-28" />
-
-              <div className="why-sst-marquee flex w-max gap-5">
-                {/* FIRST SET */}
-                <div className="flex gap-5">
-                  {/* SAFE & SECURE */}
+            <div className="sst-marquee-viewport mt-14 bg-white">
+              <div className="sst-marquee-track sst-why-track">
+                <div className="sst-marquee-group">
                   <WhySSTCard
                     icon="🛡️"
                     title="Safe & Secure"
                     text="Safety-focused journeys with experienced drivers and well-maintained vehicles."
                   />
 
-                  {/* AC COMFORT */}
                   <WhySSTCard
                     icon="❄️"
                     title="AC Comfort"
                     text="Enjoy comfortable and relaxing travel throughout your journey."
                   />
 
-                  {/* GROUP FRIENDLY */}
                   <WhySSTCard
                     icon="👨‍👩‍👧‍👦"
                     title="Group Friendly"
                     text="Comfortable travel options for families, friends and larger groups."
                   />
 
-                  {/* 24/7 SUPPORT */}
                   <WhySSTCard
                     icon="🎧"
                     title="24/7 Support"
                     text="Our team is ready to help you whenever you need assistance."
                   />
 
-                  {/* BUDGET FRIENDLY */}
                   <WhySSTCard
                     icon="💰"
                     title="Budget Friendly"
                     text="Comfortable travel options designed to give you excellent value for your money."
                   />
 
-                  {/* RESPECT CLIENTS */}
                   <WhySSTCard
                     icon="🤝"
                     title="Respect Clients"
@@ -1243,44 +1850,37 @@ export default function HomePage() {
                   />
                 </div>
 
-                {/* DUPLICATE SET FOR SEAMLESS LOOP */}
-                <div className="flex gap-5" aria-hidden="true">
-                  {/* SAFE & SECURE */}
+                <div className="sst-marquee-group" aria-hidden="true">
                   <WhySSTCard
                     icon="🛡️"
                     title="Safe & Secure"
                     text="Safety-focused journeys with experienced drivers and well-maintained vehicles."
                   />
 
-                  {/* AC COMFORT */}
                   <WhySSTCard
                     icon="❄️"
                     title="AC Comfort"
                     text="Enjoy comfortable and relaxing travel throughout your journey."
                   />
 
-                  {/* GROUP FRIENDLY */}
                   <WhySSTCard
                     icon="👨‍👩‍👧‍👦"
                     title="Group Friendly"
                     text="Comfortable travel options for families, friends and larger groups."
                   />
 
-                  {/* 24/7 SUPPORT */}
                   <WhySSTCard
                     icon="🎧"
                     title="24/7 Support"
                     text="Our team is ready to help you whenever you need assistance."
                   />
 
-                  {/* BUDGET FRIENDLY */}
                   <WhySSTCard
                     icon="💰"
                     title="Budget Friendly"
                     text="Comfortable travel options designed to give you excellent value for your money."
                   />
 
-                  {/* RESPECT CLIENTS */}
                   <WhySSTCard
                     icon="🤝"
                     title="Respect Clients"
@@ -1289,10 +1889,6 @@ export default function HomePage() {
                 </div>
               </div>
             </div>
-
-            {/* =================================================
-        SMALL TRUST MESSAGE
-        ================================================= */}
 
             <div className="mt-12 text-center">
               <p className="text-sm font-semibold text-[#07805f]">
@@ -1304,55 +1900,15 @@ export default function HomePage() {
               </p>
             </div>
           </div>
-
-          {/* =================================================
-      LOOP ANIMATION
-      ================================================= */}
-
-          <style
-            dangerouslySetInnerHTML={{
-              __html: `
-            .why-sst-marquee {
-              animation: whySstLoop 38s linear infinite;
-              will-change: transform;
-            }
-
-            .why-sst-marquee:hover {
-              animation-play-state: paused;
-            }
-
-            @keyframes whySstLoop {
-              from {
-                transform: translateX(0);
-              }
-
-              to {
-                transform: translateX(-50%);
-              }
-            }
-
-            @media (max-width: 640px) {
-              .why-sst-marquee {
-                animation-duration: 30s;
-              }
-            }
-
-            @media (prefers-reduced-motion: reduce) {
-              .why-sst-marquee {
-                animation: none;
-                transform: translateX(0);
-              }
-            }
-          `,
-            }}
-          />
         </section>
+
         {/* ===================================================
             PACKAGES
+            → → →
             =================================================== */}
 
-        <section className="sst-packages-section bg-[#f4faf7] px-6 py-24 lg:px-10">
-          <div className="mx-auto max-w-[1380px]">
+        <section className="sst-section bg-[#f4faf7]">
+          <div className="sst-section-inner">
             <Reveal>
               <SectionHeading
                 eyebrow="TRAVEL PACKAGES"
@@ -1362,82 +1918,13 @@ export default function HomePage() {
             </Reveal>
 
             {loadingPackages ? (
-              <LoadingGrid count={3} />
+              <LoadingMarquee type="package" />
             ) : packageError ? (
               <EmptyState message={packageError} />
             ) : packages.length === 0 ? (
               <EmptyState message="No travel packages available right now." />
             ) : (
-              <div className="sst-package-grid mt-12 grid gap-7 md:grid-cols-2 lg:grid-cols-3">
-                {packages.slice(0, 6).map((item, index) => {
-                  const image = getImageUrl(item);
-
-                  const title = getPackageTitle(item);
-
-                  const price = getPackagePrice(item);
-
-                  return (
-                    <Reveal
-                      key={item._id || item.id || index}
-                      delay={index * 130}
-                    >
-                      <Link
-                        href={`/packages/${item.slug || item._id || item.id}`}
-                        className="group block overflow-hidden rounded-[30px] bg-white shadow-[0_15px_45px_rgba(0,70,55,0.08)] transition-all duration-500 hover:-translate-y-2"
-                      >
-                        <div className="sst-package-image relative h-[250px] overflow-hidden bg-[#dcefe8]">
-                          {image ? (
-                            <img
-                              src={image}
-                              alt={title}
-                              loading="lazy"
-                              decoding="async"
-                              className="h-full w-full object-cover transition-transform duration-700 group-hover:scale-110"
-                            />
-                          ) : (
-                            <div className="flex h-full items-center justify-center">
-                              <PackageOpen
-                                size={48}
-                                className="text-[#07875f]"
-                              />
-                            </div>
-                          )}
-
-                          <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent" />
-
-                          <div className="absolute bottom-5 left-5 right-5">
-                            <div className="text-xs font-bold uppercase tracking-wider text-[#b7f0dd]">
-                              SST Travels
-                            </div>
-
-                            <h3 className="mt-1 text-2xl font-bold text-white">
-                              {title}
-                            </h3>
-                          </div>
-                        </div>
-
-                        <div className="flex items-center justify-between gap-4 p-6">
-                          <div>
-                            <p className="text-xs font-semibold uppercase tracking-wider text-[#79958e]">
-                              Starting From
-                            </p>
-
-                            <p className="mt-1 text-xl font-extrabold text-[#075847]">
-                              {price
-                                ? `₹${Number(price).toLocaleString("en-IN")}`
-                                : "Contact Us"}
-                            </p>
-                          </div>
-
-                          <span className="flex h-11 w-11 items-center justify-center rounded-full bg-[#e4f7f0] text-[#07875f] transition-all group-hover:bg-[#07875f] group-hover:text-white">
-                            <ArrowRight size={19} />
-                          </span>
-                        </div>
-                      </Link>
-                    </Reveal>
-                  );
-                })}
-              </div>
+              <PackageMarquee packages={packages} />
             )}
           </div>
         </section>
@@ -1446,9 +1933,9 @@ export default function HomePage() {
             FINAL CTA
             =================================================== */}
 
-        <section className="sst-cta-section px-5 py-14 sm:px-6 sm:py-16 lg:px-10">
+        <section className="bg-[#f4faf7] px-[var(--sst-gutter)] py-10 sm:py-14">
           <Reveal>
-            <div className="sst-final-cta relative mx-auto max-w-[1380px] overflow-hidden rounded-[36px] bg-[#07805e] px-6 py-12 text-center text-white shadow-[0_25px_70px_rgba(0,90,65,0.2)] sm:px-10 sm:py-14 lg:px-16 lg:py-16">
+            <div className="sst-final-cta relative mx-auto overflow-hidden bg-[#07805e] text-center text-white shadow-[0_25px_70px_rgba(0,90,65,0.2)]">
               <div className="absolute -left-20 -top-20 h-64 w-64 rounded-full bg-white/10 blur-3xl" />
 
               <div className="absolute -bottom-28 -right-20 h-72 w-72 rounded-full bg-[#003e31]/20 blur-3xl" />
@@ -1458,11 +1945,11 @@ export default function HomePage() {
                   <Plane size={27} />
                 </div>
 
-                <h2 className="sst-final-cta-title mx-auto mt-5 max-w-[700px] text-3xl font-black leading-[1.08] tracking-[-1px] sm:text-4xl lg:text-5xl">
+                <h2 className="sst-final-cta-title mx-auto mt-5 max-w-[800px] font-black">
                   Your Journey Starts With SST Travels
                 </h2>
 
-                <p className="mx-auto mt-4 max-w-[600px] text-base leading-7 text-white/80 sm:text-[17px]">
+                <p className="mx-auto mt-4 max-w-[620px] text-base leading-7 text-white/80 sm:text-[17px]">
                   Comfortable rides, safe journeys and unforgettable travel
                   experiences are just one booking away.
                 </p>
@@ -1481,10 +1968,6 @@ export default function HomePage() {
           </Reveal>
         </section>
 
-        {/* ===================================================
-            FOOTER
-            =================================================== */}
-
         <Footer />
       </main>
     </>
@@ -1492,54 +1975,650 @@ export default function HomePage() {
 }
 
 /* =========================================================
-   REVEAL COMPONENT
-
-   FIXED:
-   - No Math.random()
-   - No createElement()
-   - No manually attached observer property
-   - Proper cleanup
-   - Stable SSR/client markup
+   INTERACTIVE MARQUEE
    ========================================================= */
 
-function Reveal({ children, delay = 0, className = "" }) {
-  const [visible, setVisible] = useState(false);
+function InteractiveMarquee({
+  items,
+  direction = "right",
+  renderItem,
+  className = "",
+  speed = 24,
+}) {
+  const viewportRef = useRef(null);
+  const trackRef = useRef(null);
+  const groupRef = useRef(null);
+  const frameRef = useRef(null);
+  const manualFrameRef = useRef(null);
+  const resumeTimerRef = useRef(null);
 
-  const observerRef = useRef(null);
+  const groupWidthRef = useRef(0);
+  const cardStepRef = useRef(0);
+  const offsetRef = useRef(0);
+  const lastTimeRef = useRef(0);
+
+  const draggingRef = useRef(false);
+  const pointerIdRef = useRef(null);
+  const lastPointerXRef = useRef(0);
+  const manualAnimatingRef = useRef(false);
+  const initializedRef = useRef(false);
+
+  const [showSwipeHint, setShowSwipeHint] = useState(true);
+
+  const isRight = direction === "right";
+
+  const getGroupMetrics = () => {
+    const group = groupRef.current;
+    if (!group) return { width: 0, step: 0 };
+
+    const width = group.getBoundingClientRect().width;
+    const firstCard = group.firstElementChild;
+    const cardWidth = firstCard?.getBoundingClientRect().width || 0;
+
+    let gap = 0;
+    if (typeof window !== "undefined") {
+      const styles = window.getComputedStyle(group);
+      gap = parseFloat(styles.columnGap || styles.gap || "0") || 0;
+    }
+
+    const step = cardWidth + gap;
+
+    if (width > 0) groupWidthRef.current = width;
+    if (step > 0) cardStepRef.current = step;
+
+    return {
+      width: groupWidthRef.current,
+      step: cardStepRef.current,
+    };
+  };
+
+  const wrapOffset = () => {
+    const width = groupWidthRef.current || getGroupMetrics().width;
+    if (!width) return 0;
+
+    // Keep the logical offset bounded so very fast dragging or long sessions
+    // never create a huge transform value. The visual position remains exact.
+    const half = width / 2;
+    offsetRef.current =
+      ((((offsetRef.current + half) % width) + width) % width) - half;
+
+    return offsetRef.current;
+  };
+
+  const getVisualPosition = () => {
+    const width = groupWidthRef.current || getGroupMetrics().width;
+    if (!width) return 0;
+
+    wrapOffset();
+    return -width + offsetRef.current;
+  };
+
+  const applyPosition = () => {
+    const track = trackRef.current;
+    if (!track) return;
+
+    track.style.transform = `translate3d(${getVisualPosition()}px, 0, 0)`;
+  };
+
+  const setInitialPosition = () => {
+    const { width } = getGroupMetrics();
+    if (!width) return;
+
+    offsetRef.current = 0;
+    initializedRef.current = true;
+    applyPosition();
+  };
+
+  const pauseForUser = () => {
+    if (resumeTimerRef.current) {
+      clearTimeout(resumeTimerRef.current);
+      resumeTimerRef.current = null;
+    }
+  };
+
+  const resumeAfterUser = () => {
+    if (resumeTimerRef.current) {
+      clearTimeout(resumeTimerRef.current);
+    }
+
+    resumeTimerRef.current = setTimeout(() => {
+      lastTimeRef.current = 0;
+    }, 220);
+  };
+
+  const handlePointerDown = (event) => {
+    if (event.pointerType === "mouse" && event.button !== 0) return;
+
+    setShowSwipeHint(false);
+    pauseForUser();
+
+    if (manualFrameRef.current) {
+      cancelAnimationFrame(manualFrameRef.current);
+      manualFrameRef.current = null;
+    }
+
+    manualAnimatingRef.current = false;
+    draggingRef.current = true;
+    pointerIdRef.current = event.pointerId;
+    lastPointerXRef.current = event.clientX;
+    lastTimeRef.current = 0;
+
+    event.currentTarget.setPointerCapture?.(event.pointerId);
+  };
+
+  const handlePointerMove = (event) => {
+    if (!draggingRef.current) return;
+    if (pointerIdRef.current !== event.pointerId) return;
+
+    const deltaX = event.clientX - lastPointerXRef.current;
+    lastPointerXRef.current = event.clientX;
+
+    if (Math.abs(deltaX) > 0) {
+      offsetRef.current += deltaX;
+      wrapOffset();
+      applyPosition();
+    }
+  };
+
+  const finishPointer = (event) => {
+    if (!draggingRef.current) return;
+
+    if (event?.pointerId != null && pointerIdRef.current !== event.pointerId) {
+      return;
+    }
+
+    draggingRef.current = false;
+    pointerIdRef.current = null;
+    lastTimeRef.current = 0;
+
+    try {
+      event?.currentTarget?.releasePointerCapture?.(event.pointerId);
+    } catch {}
+
+    wrapOffset();
+    applyPosition();
+    resumeAfterUser();
+  };
+
+  const handleWheel = () => {
+    // Wheel scrolling belongs to the page. We only pause the marquee briefly
+    // while the user is actively scrolling so it cannot fight the page motion.
+    setShowSwipeHint(false);
+    pauseForUser();
+    resumeAfterUser();
+  };
+
+  const handleManualMove = (moveDirection) => {
+    const { width, step } = getGroupMetrics();
+    if (!width) return;
+
+    setShowSwipeHint(false);
+    pauseForUser();
+
+    if (manualFrameRef.current) {
+      cancelAnimationFrame(manualFrameRef.current);
+      manualFrameRef.current = null;
+    }
+
+    draggingRef.current = false;
+    manualAnimatingRef.current = true;
+    lastTimeRef.current = 0;
+
+    // Move exactly one card at a time. This keeps the button action natural
+    // and prevents the carousel from jumping several cards on wide screens.
+    const distance = Math.max(80, Math.min(step || width * 0.28, 360));
+    const directionMultiplier = moveDirection === "left" ? -1 : 1;
+    const start = offsetRef.current;
+    const target = start + distance * directionMultiplier;
+    const duration = 620;
+    const startedAt = performance.now();
+
+    const easeInOut = (value) =>
+      value < 0.5
+        ? 4 * value * value * value
+        : 1 - Math.pow(-2 * value + 2, 3) / 2;
+
+    const animateManualMove = (now) => {
+      const progress = Math.min(1, (now - startedAt) / duration);
+      const eased = easeInOut(progress);
+
+      offsetRef.current = start + (target - start) * eased;
+
+      wrapOffset();
+      applyPosition();
+
+      if (progress < 1) {
+        manualFrameRef.current = requestAnimationFrame(animateManualMove);
+        return;
+      }
+
+      offsetRef.current = target;
+      wrapOffset();
+      applyPosition();
+
+      manualAnimatingRef.current = false;
+      manualFrameRef.current = null;
+      lastTimeRef.current = 0;
+      resumeAfterUser();
+    };
+
+    manualFrameRef.current = requestAnimationFrame(animateManualMove);
+  };
 
   useEffect(() => {
-    const node = observerRef.current;
+    initializedRef.current = false;
+    groupWidthRef.current = 0;
+    cardStepRef.current = 0;
 
-    if (!node) return;
+    const setup = () => {
+      const { width } = getGroupMetrics();
+      if (!width) return;
 
-    const observer = new IntersectionObserver(
-      ([entry]) => {
-        setVisible(entry.isIntersecting);
-      },
-      {
-        threshold: 0.15,
-        rootMargin: "0px 0px -60px 0px",
-      },
-    );
+      if (!initializedRef.current) {
+        setInitialPosition();
+        return;
+      }
 
-    observer.observe(node);
+      // Re-apply the current logical position instead of resetting the
+      // carousel when the page/viewport changes during fast scrolling.
+      wrapOffset();
+      applyPosition();
+    };
+
+    setup();
+    const firstFrame = requestAnimationFrame(setup);
+
+    const observer =
+      typeof ResizeObserver !== "undefined"
+        ? new ResizeObserver(() => {
+            const previousWidth = groupWidthRef.current;
+            const { width: newWidth } = getGroupMetrics();
+
+            if (!newWidth) return;
+
+            if (!previousWidth) {
+              setInitialPosition();
+              return;
+            }
+
+            if (Math.abs(newWidth - previousWidth) > 1) {
+              // Preserve the relative location when responsive sizing changes.
+              const ratio = newWidth / previousWidth;
+              offsetRef.current *= ratio;
+              groupWidthRef.current = newWidth;
+              wrapOffset();
+              applyPosition();
+            }
+          })
+        : null;
+
+    if (observer && groupRef.current) {
+      observer.observe(groupRef.current);
+    }
+
+    window.addEventListener("resize", setup);
 
     return () => {
-      observer.disconnect();
+      cancelAnimationFrame(firstFrame);
+      observer?.disconnect();
+      window.removeEventListener("resize", setup);
+    };
+  }, [items.length, direction]);
+
+  useEffect(() => {
+    let mounted = true;
+
+    const reduceMotion =
+      typeof window !== "undefined" && window.matchMedia
+        ? window.matchMedia("(prefers-reduced-motion: reduce)")
+        : null;
+
+    const tick = (time) => {
+      if (!mounted) return;
+
+      if (!lastTimeRef.current) {
+        lastTimeRef.current = time;
+      }
+
+      const delta = Math.min(time - lastTimeRef.current, 40);
+      lastTimeRef.current = time;
+
+      const width = groupWidthRef.current || getGroupMetrics().width;
+
+      if (
+        width &&
+        initializedRef.current &&
+        !draggingRef.current &&
+        !manualAnimatingRef.current &&
+        !reduceMotion?.matches
+      ) {
+        const pixelsPerSecond = Math.max(12, Number(speed) || 24);
+        const distance = pixelsPerSecond * (delta / 1000);
+
+        offsetRef.current += isRight ? -distance : distance;
+        wrapOffset();
+        applyPosition();
+      }
+
+      frameRef.current = requestAnimationFrame(tick);
+    };
+
+    frameRef.current = requestAnimationFrame(tick);
+
+    return () => {
+      mounted = false;
+      lastTimeRef.current = 0;
+
+      if (frameRef.current) {
+        cancelAnimationFrame(frameRef.current);
+      }
+    };
+  }, [direction, speed]);
+
+  useEffect(() => {
+    return () => {
+      if (resumeTimerRef.current) {
+        clearTimeout(resumeTimerRef.current);
+      }
+
+      if (manualFrameRef.current) {
+        cancelAnimationFrame(manualFrameRef.current);
+      }
     };
   }, []);
 
-  return (
+  if (!items.length) return null;
+
+  const loopItems =
+    items.length < 4
+      ? Array.from({ length: Math.ceil(4 / items.length) }, () => items).flat()
+      : items;
+
+  const renderGroup = (copy) => (
     <div
-      ref={observerRef}
-      className={`reveal-transition ${
-        visible ? "reveal-visible" : "reveal-hidden"
-      } ${className}`}
-      style={{
-        transitionDelay: `${delay}ms`,
-      }}
+      ref={copy === 0 ? groupRef : undefined}
+      className="sst-marquee-group"
+      aria-hidden={copy !== 0}
     >
-      {children}
+      {loopItems.map((item, index) => renderItem(item, index, copy !== 0))}
+    </div>
+  );
+
+  return (
+    <>
+      {showSwipeHint && (
+        <div className="mb-3 flex items-center justify-end gap-2 text-[11px] font-bold uppercase tracking-[0.16em] text-[#6f958b] sm:hidden">
+          <span>Swipe to explore</span>
+          <ArrowRight size={14} />
+        </div>
+      )}
+
+      <div
+        ref={viewportRef}
+        className={`sst-marquee-viewport ${className}`}
+        onPointerDown={handlePointerDown}
+        onPointerMove={handlePointerMove}
+        onPointerUp={finishPointer}
+        onPointerCancel={finishPointer}
+        onLostPointerCapture={finishPointer}
+        onWheel={handleWheel}
+      >
+        {/* Buttons sit on top of the card row, not outside the carousel. */}
+        <div className="pointer-events-none absolute inset-0 z-40 hidden items-center justify-between px-3 sm:px-4 md:px-5 lg:flex">
+          <button
+            type="button"
+            aria-label="Explore previous items"
+            onPointerDown={(event) => event.stopPropagation()}
+            onClick={(event) => {
+              event.stopPropagation();
+              handleManualMove("left");
+            }}
+            className="pointer-events-auto flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-white/90 bg-white/95 text-[#075847] shadow-[0_8px_24px_rgba(0,60,45,0.16)] backdrop-blur-sm transition-all duration-300 ease-out hover:scale-105 hover:bg-white hover:shadow-[0_12px_28px_rgba(0,60,45,0.2)] active:scale-95 sm:h-11 sm:w-11 md:h-12 md:w-12"
+          >
+            <ArrowLeft size={19} strokeWidth={2.4} />
+          </button>
+
+          <button
+            type="button"
+            aria-label="Explore next items"
+            onPointerDown={(event) => event.stopPropagation()}
+            onClick={(event) => {
+              event.stopPropagation();
+              handleManualMove("right");
+            }}
+            className="pointer-events-auto flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-white/90 bg-white/95 text-[#075847] shadow-[0_8px_24px_rgba(0,60,45,0.16)] backdrop-blur-sm transition-all duration-300 ease-out hover:scale-105 hover:bg-white hover:shadow-[0_12px_28px_rgba(0,60,45,0.2)] active:scale-95 sm:h-11 sm:w-11 md:h-12 md:w-12"
+          >
+            <ArrowRight size={19} strokeWidth={2.4} />
+          </button>
+        </div>
+
+        <div
+          ref={trackRef}
+          className="sst-marquee-track"
+          style={{ transform: "translate3d(0, 0, 0)" }}
+        >
+          {renderGroup(0)}
+          {renderGroup(1)}
+          {renderGroup(2)}
+        </div>
+      </div>
+    </>
+  );
+}
+
+function DestinationMarquee({ destinations }) {
+  const items = destinations.slice(0, 8);
+
+  return (
+    <InteractiveMarquee
+      items={items}
+      direction="right"
+      speed={24}
+      renderItem={(destination, index, duplicate) => {
+        const image = getImageUrl(destination);
+
+        const name =
+          destination?.name ||
+          destination?.title ||
+          destination?.destinationName ||
+          "Destination";
+
+        const id =
+          destination?._id || destination?.id || destination?.slug || index;
+
+        const slug = destination?.slug || destination?._id || destination?.id;
+
+        return (
+          <DestinationCard
+            key={`${id}-${duplicate ? "copy" : "main"}-${index}`}
+            image={image}
+            name={name}
+            slug={slug}
+          />
+        );
+      }}
+    />
+  );
+}
+
+/* =========================================================
+   DESTINATION CARD
+   ========================================================= */
+
+function DestinationCard({ destination, image, name, slug }) {
+  return (
+    <Link
+      href={`/destinations/${slug}`}
+      className="sst-destination-card group"
+      aria-label={`Explore ${name}`}
+    >
+      <div className="sst-destination-card-image bg-[#dcefe8]">
+        {image ? (
+          <img
+            src={image}
+            alt={name}
+            loading="lazy"
+            decoding="async"
+            onError={(event) => {
+              event.currentTarget.onerror = null;
+
+              event.currentTarget.src = FALLBACK_DESTINATION_IMAGE;
+            }}
+          />
+        ) : (
+          <div className="flex h-full w-full items-center justify-center bg-gradient-to-br from-[#dff4ec] to-[#c9e8dd]">
+            <div className="text-center">
+              <MapPin size={48} className="mx-auto text-[#07875f]" />
+
+              <p className="mt-3 text-sm font-semibold text-[#4c8174]">
+                Destination
+              </p>
+            </div>
+          </div>
+        )}
+
+        <div className="sst-destination-overlay" />
+
+        <div className="absolute right-5 top-5 flex h-10 w-10 items-center justify-center rounded-full border border-white/30 bg-white/15 text-white opacity-0 backdrop-blur-md transition-all duration-300 group-hover:opacity-100">
+          <ArrowRight size={17} />
+        </div>
+
+        <div className="sst-destination-content">
+          <h3 className="sst-destination-name">{name}</h3>
+
+          <div className="sst-destination-link">
+            Explore destination
+            <ArrowRight size={14} />
+          </div>
+        </div>
+      </div>
+    </Link>
+  );
+}
+
+/* =========================================================
+   PACKAGE MARQUEE
+   ========================================================= */
+
+function PackageMarquee({ packages }) {
+  const items = packages.slice(0, 8);
+
+  return (
+    <InteractiveMarquee
+      items={items}
+      direction="right"
+      speed={22}
+      renderItem={(item, index, duplicate) => {
+        const image = getImageUrl(item);
+        const title = getPackageTitle(item);
+        const price = getPackagePrice(item);
+
+        const id = item?._id || item?.id || item?.slug || index;
+
+        const slug = item?.slug || item?._id || item?.id;
+
+        return (
+          <PackageCard
+            key={`${id}-${duplicate ? "copy" : "main"}-${index}`}
+            image={image}
+            title={title}
+            price={price}
+            slug={slug}
+          />
+        );
+      }}
+    />
+  );
+}
+
+/* =========================================================
+   PACKAGE CARD
+   ========================================================= */
+
+function PackageCard({ image, title, price, slug }) {
+  return (
+    <Link
+      href={`/packages/${slug}`}
+      className="sst-package-card group"
+      aria-label={`View ${title}`}
+    >
+      <div className="sst-package-image bg-[#dcefe8]">
+        {image ? (
+          <img src={image} alt={title} loading="lazy" decoding="async" />
+        ) : (
+          <div className="flex h-full w-full items-center justify-center bg-gradient-to-br from-[#dff4ec] to-[#c9e8dd]">
+            <PackageOpen size={52} className="text-[#07875f]" />
+          </div>
+        )}
+
+        <div className="sst-package-overlay" />
+
+        <div className="sst-package-top">
+          <span className="sst-package-badge">SST Travels</span>
+
+          <span className="flex h-9 w-9 items-center justify-center rounded-full border border-white/30 bg-white/15 text-white backdrop-blur-md">
+            <ArrowRight size={15} />
+          </span>
+        </div>
+
+        <div className="sst-package-content">
+          <h3 className="sst-package-title">{title}</h3>
+        </div>
+      </div>
+
+      <div className="sst-package-footer">
+        <div>
+          <p className="sst-package-price-label">Starting From</p>
+
+          <p className="sst-package-price">
+            {price ? `₹${Number(price).toLocaleString("en-IN")}` : "Contact Us"}
+          </p>
+        </div>
+
+        <span className="sst-package-arrow">
+          <ArrowRight size={18} />
+        </span>
+      </div>
+    </Link>
+  );
+}
+
+/* =========================================================
+   WHY SST CARD
+   ========================================================= */
+
+function WhySSTCard({ icon, title, text }) {
+  return (
+    <div className="sst-why-card group">
+      <div className="sst-why-icon">{icon}</div>
+
+      <h3 className="sst-why-title">{title}</h3>
+
+      <p className="sst-why-text">{text}</p>
+
+      <div className="sst-why-line" />
+    </div>
+  );
+}
+
+/* =========================================================
+   SECTION HEADING
+   ========================================================= */
+
+function SectionHeading({ eyebrow, title, description }) {
+  return (
+    <div className="max-w-[780px]">
+      <div className="text-xs font-black tracking-[0.22em] text-[#07805f]">
+        {eyebrow}
+      </div>
+
+      <h2 className="sst-section-title mt-4 font-black text-[#074d40]">
+        <AnimatedLetters text={title} />
+      </h2>
+
+      <p className="sst-section-description mt-5 text-[#587b73]">
+        {description}
+      </p>
     </div>
   );
 }
@@ -1555,7 +2634,7 @@ function MiniFeature({ icon, title, subtitle }) {
         {icon}
       </div>
 
-      <div>
+      <div className="min-w-0">
         <div className="text-sm font-extrabold text-[#074d40]">{title}</div>
 
         <div className="mt-0.5 text-xs font-medium text-[#42776d]">
@@ -1577,7 +2656,7 @@ function BottomFeature({ icon, title, subtitle }) {
         {icon}
       </div>
 
-      <div>
+      <div className="min-w-0">
         <div className="text-sm font-extrabold text-[#074d40]">{title}</div>
 
         <div className="mt-0.5 text-[11px] font-medium text-[#65a394]">
@@ -1589,117 +2668,142 @@ function BottomFeature({ icon, title, subtitle }) {
 }
 
 /* =========================================================
-   SECTION HEADING
+   REVEAL
    ========================================================= */
 
-function SectionHeading({ eyebrow, title, description }) {
+function Reveal({ children, delay = 0, className = "", once = false }) {
+  const [visible, setVisible] = useState(false);
+  const observerRef = useRef(null);
+
+  useEffect(() => {
+    const node = observerRef.current;
+
+    if (!node) return;
+
+    if (typeof IntersectionObserver === "undefined") {
+      setVisible(true);
+      return;
+    }
+
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting) {
+          setVisible(true);
+
+          if (once) observer.unobserve(node);
+        } else if (!once) {
+          setVisible(false);
+        }
+      },
+      {
+        threshold: 0.14,
+        rootMargin: "0px 0px -70px 0px",
+      },
+    );
+
+    observer.observe(node);
+
+    return () => observer.disconnect();
+  }, [once]);
+
   return (
-    <div className="max-w-[760px]">
-      <div className="text-xs font-black tracking-[0.22em] text-[#07805f]">
-        {eyebrow}
-      </div>
-
-      <h2 className="mt-4 text-4xl font-black tracking-[-1px] text-[#074d40] sm:text-5xl">
-        {title}
-      </h2>
-
-      <p className="mt-5 text-lg leading-8 text-[#587b73]">{description}</p>
+    <div
+      ref={observerRef}
+      className={`reveal-transition ${visible ? "reveal-visible" : "reveal-hidden"} ${className}`}
+      style={{ transitionDelay: `${delay}ms` }}
+    >
+      {children}
     </div>
   );
 }
 
-/* =========================================================
-   WHY SST CARD
-   ========================================================= */
+function AnimatedLetters({ text, className = "", delay = 0, stagger = 30 }) {
+  const [visible, setVisible] = useState(false);
+  const ref = useRef(null);
+  const animationIdRef = useRef(0);
+  const value = String(text ?? "");
 
-function WhySSTCard({ icon, title, text }) {
+  useEffect(() => {
+    const node = ref.current;
+
+    if (!node) return undefined;
+
+    if (typeof IntersectionObserver === "undefined") {
+      setVisible(true);
+      return undefined;
+    }
+
+    let resetFrame = null;
+
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting) {
+          animationIdRef.current += 1;
+          const nextId = animationIdRef.current;
+
+          setVisible(false);
+
+          resetFrame = requestAnimationFrame(() => {
+            if (animationIdRef.current === nextId) {
+              setVisible(true);
+            }
+          });
+        } else {
+          setVisible(false);
+        }
+      },
+      {
+        threshold: 0.12,
+        rootMargin: "-20px 0px -70px 0px",
+      },
+    );
+
+    observer.observe(node);
+
+    return () => {
+      observer.disconnect();
+      if (resetFrame) cancelAnimationFrame(resetFrame);
+    };
+  }, []);
+
   return (
-    <div className="group w-[280px] shrink-0 rounded-[28px] border border-[#d9eee7] bg-white p-6 shadow-[0_12px_35px_rgba(0,80,60,0.07)] transition-all duration-500 hover:-translate-y-2 hover:border-[#a9ddcd] hover:shadow-[0_20px_45px_rgba(0,80,60,0.13)] sm:w-[310px]">
-      <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-[#eaf8f3] text-2xl shadow-sm transition-all duration-500 group-hover:scale-110 group-hover:rotate-3">
-        {icon}
-      </div>
-
-      <h3 className="mt-6 text-xl font-black text-[#075847]">{title}</h3>
-
-      <p className="mt-3 text-sm leading-6 text-[#718982]">{text}</p>
-
-      <div className="mt-6 h-1 w-10 rounded-full bg-[#07805f] transition-all duration-500 group-hover:w-20" />
-    </div>
+    <span ref={ref} className={className} aria-label={value}>
+      {value.split("").map((letter, index) => (
+        <span
+          key={`${index}-${letter}`}
+          aria-hidden="true"
+          className={`sst-letter ${visible ? "sst-letter-visible" : ""}`}
+          style={{ transitionDelay: `${delay + index * stagger}ms` }}
+        >
+          {letter === " " ? "\u00A0" : letter}
+        </span>
+      ))}
+    </span>
   );
 }
 
 /* =========================================================
-   CONFIDENCE CARD
+   LOADING MARQUEE
    ========================================================= */
 
-function ConfidenceCard({ index, icon, title, text }) {
+function LoadingMarquee({ type = "destination" }) {
+  const isDestination = type === "destination";
+
   return (
-    <Reveal delay={index * 120}>
-      <div
-        className="confidence-loop group relative h-full overflow-hidden rounded-[28px] border border-[#dcefe8] bg-[#f7fcfa] p-7 transition-all duration-500 hover:-translate-y-3 hover:bg-white hover:shadow-[0_25px_60px_rgba(0,70,55,0.12)]"
-        style={{
-          animationDelay: `${index * 0.28}s`,
-        }}
-      >
-        {/* Animated shine */}
-
-        <div className="pointer-events-none absolute inset-y-0 -left-[120%] w-[70%] rotate-[15deg] bg-gradient-to-r from-transparent via-white/50 to-transparent opacity-0 transition-opacity duration-300 group-hover:opacity-100 group-hover:animate-[shineMove_1s_ease-in-out]" />
-
-        {/* Icon */}
-
-        <div className="relative z-10 flex h-14 w-14 items-center justify-center rounded-2xl bg-[#dff5ec] text-[#07805f] transition-all duration-500 group-hover:scale-110 group-hover:bg-[#07805f] group-hover:text-white">
-          {icon}
-        </div>
-
-        {/* Content */}
-
-        <h3 className="relative z-10 mt-6 text-xl font-extrabold text-[#075847]">
-          {title}
-        </h3>
-
-        <p className="relative z-10 mt-3 leading-7 text-[#68867f]">{text}</p>
-
-        {/* Bottom line */}
-
-        <div className="relative z-10 mt-6 h-1 w-10 rounded-full bg-[#07805f] transition-all duration-500 group-hover:w-20" />
-      </div>
-    </Reveal>
-  );
-}
-
-/* =========================================================
-   DARK FEATURE
-   ========================================================= */
-
-function DarkFeature({ icon, text }) {
-  return (
-    <div className="flex items-center gap-2 rounded-full border border-white/10 bg-white/10 px-4 py-2.5 text-sm font-semibold text-white/90 transition-all duration-300 hover:-translate-y-1 hover:bg-white/15">
-      <span className="text-[#71d9ba]">{icon}</span>
-
-      {text}
-    </div>
-  );
-}
-
-/* =========================================================
-   LOADING GRID
-   ========================================================= */
-
-function LoadingGrid({ count = 3 }) {
-  return (
-    <div className="sst-loading-grid mt-12 grid gap-7 md:grid-cols-2 lg:grid-cols-3">
+    <div className="mt-12 flex gap-4 overflow-hidden">
       {Array.from({
-        length: count,
+        length: 3,
       }).map((_, index) => (
-        <div key={index} className="overflow-hidden rounded-[30px] bg-white">
-          <div className="h-[270px] animate-pulse bg-[#dfeee9]" />
+        <div
+          key={index}
+          className={`${isDestination ? "w-[clamp(280px,29vw,430px)]" : "w-[clamp(285px,29vw,430px)]"} shrink-0 overflow-hidden rounded-[28px] bg-white shadow-[0_14px_38px_rgba(0,75,58,0.06)]`}
+        >
+          <div className="h-[250px] animate-pulse bg-[#dfeee9]" />
 
-          <div className="space-y-3 p-6">
+          <div className="p-5">
             <div className="h-5 w-2/3 animate-pulse rounded bg-[#e1eee9]" />
 
-            <div className="h-4 w-full animate-pulse rounded bg-[#edf5f2]" />
-
-            <div className="h-4 w-1/2 animate-pulse rounded bg-[#edf5f2]" />
+            <div className="mt-3 h-4 w-1/2 animate-pulse rounded bg-[#edf5f2]" />
           </div>
         </div>
       ))}
