@@ -13,7 +13,6 @@ import {
   Map,
   Mail,
   ArrowRight,
-  LayoutDashboard,
   Loader2,
   RefreshCw,
   CalendarDays,
@@ -429,7 +428,6 @@ export default function DashboardPage() {
       });
     } catch (err) {
       console.error("Dashboard loading failed:", err);
-
       setError("Unable to load dashboard data.");
     } finally {
       setLoading(false);
@@ -452,9 +450,17 @@ export default function DashboardPage() {
         ================================================= */}
 
         <div className="mb-5 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex items-center gap-3">
-            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-emerald-100 text-emerald-700 shadow-sm">
-              <LayoutDashboard className="h-5 w-5" />
+          {/* LOGO + HEADER */}
+
+          <div className="flex items-center gap-4">
+            {/* SST TRAVELS LOGO */}
+
+            <div className="flex h-14 w-16 shrink-0 items-center justify-center">
+              <img
+                src="/images/sst-travels-logo.png"
+                alt="SST Travels"
+                className="h-14 w-auto max-w-[76px] object-contain"
+              />
             </div>
 
             <div>
@@ -473,6 +479,8 @@ export default function DashboardPage() {
               </p>
             </div>
           </div>
+
+          {/* REFRESH */}
 
           <button
             type="button"
@@ -498,8 +506,7 @@ export default function DashboardPage() {
         )}
 
         {/* =================================================
-            SST TRAVELS WELCOME BANNER
-            WIDE + COMPACT
+            WELCOME BANNER
         ================================================= */}
 
         <section className="relative mb-5 w-full overflow-hidden rounded-2xl bg-emerald-950 shadow-lg">
@@ -509,16 +516,30 @@ export default function DashboardPage() {
             className="absolute inset-0 h-full w-full object-cover"
           />
 
-          {/* Dark overlay */}
-
           <div className="absolute inset-0 bg-gradient-to-r from-emerald-950/95 via-emerald-900/75 to-slate-900/30" />
 
-          {/* Banner content */}
-
-          <div className="relative flex min-h-[155px] w-full items-center px-6 py-6 sm:px-8 lg:px-10">
-            {/* LEFT */}
-
+          <div className="relative flex min-h-[175px] w-full items-center px-6 py-6 sm:px-8 lg:px-10">
             <div className="max-w-2xl">
+              {/* LOGO */}
+
+              <div className="mb-3 flex items-center gap-3">
+                <div className="flex h-14 w-14 items-center justify-center rounded-xl bg-white/95 p-1.5 shadow-lg">
+                  <img
+                    src="/images/sst-travels-logo.png"
+                    alt="SST Travels"
+                    className="h-full w-full object-contain"
+                  />
+                </div>
+
+                <div>
+                  <p className="text-[9px] font-bold uppercase tracking-[0.2em] text-emerald-200">
+                    Tourism Management
+                  </p>
+
+                  <p className="text-lg font-bold text-white">SST Travels</p>
+                </div>
+              </div>
+
               <div className="mb-2 flex items-center gap-2">
                 <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-emerald-200">
                   Welcome Back
@@ -530,7 +551,7 @@ export default function DashboardPage() {
               </div>
 
               <h2 className="text-3xl font-bold tracking-tight text-white sm:text-4xl">
-                SST Travels{" "}
+                Travel More Worry Less{" "}
                 <span className="inline-block animate-pulse">👋</span>
               </h2>
 
@@ -595,9 +616,7 @@ export default function DashboardPage() {
         ================================================= */}
 
         <div className="grid grid-cols-1 gap-5 xl:grid-cols-3">
-          {/* =================================================
-              RECENT ACTIVITY
-          ================================================= */}
+          {/* RECENT ACTIVITY */}
 
           <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
             <div className="mb-4 flex items-center justify-between">
@@ -647,9 +666,7 @@ export default function DashboardPage() {
             </div>
           </section>
 
-          {/* =================================================
-              VISITOR INSIGHTS
-          ================================================= */}
+          {/* VISITOR INSIGHTS */}
 
           <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
             <div className="mb-5 flex items-center justify-between">
@@ -669,7 +686,7 @@ export default function DashboardPage() {
             </div>
 
             <div className="space-y-5">
-              {/* Destinations */}
+              {/* DESTINATIONS */}
 
               <div>
                 <div className="mb-2 flex justify-between">
@@ -692,7 +709,7 @@ export default function DashboardPage() {
                 </div>
               </div>
 
-              {/* Places */}
+              {/* PLACES */}
 
               <div>
                 <div className="mb-2 flex justify-between">
@@ -715,7 +732,7 @@ export default function DashboardPage() {
                 </div>
               </div>
 
-              {/* Packages */}
+              {/* PACKAGES */}
 
               <div>
                 <div className="mb-2 flex justify-between">
@@ -738,7 +755,7 @@ export default function DashboardPage() {
                 </div>
               </div>
 
-              {/* Inquiries */}
+              {/* INQUIRIES */}
 
               <div>
                 <div className="mb-2 flex justify-between">
@@ -763,9 +780,7 @@ export default function DashboardPage() {
             </div>
           </section>
 
-          {/* =================================================
-              QUICK ACTIONS
-          ================================================= */}
+          {/* QUICK ACTIONS */}
 
           <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
             <div className="mb-4">
@@ -815,7 +830,7 @@ export default function DashboardPage() {
         ================================================= */}
 
         <section className="mt-5 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          {/* Tourism Content */}
+          {/* TOURISM CONTENT */}
 
           <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm transition-all duration-300 hover:-translate-y-0.5 hover:shadow-md">
             <div className="flex items-center justify-between">
@@ -841,7 +856,7 @@ export default function DashboardPage() {
             </p>
           </div>
 
-          {/* Listed Places */}
+          {/* LISTED PLACES */}
 
           <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm transition-all duration-300 hover:-translate-y-0.5 hover:shadow-md">
             <div className="flex items-center justify-between">
@@ -859,7 +874,7 @@ export default function DashboardPage() {
             </p>
           </div>
 
-          {/* Travel Options */}
+          {/* TRAVEL OPTIONS */}
 
           <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm transition-all duration-300 hover:-translate-y-0.5 hover:shadow-md">
             <div className="flex items-center justify-between">
@@ -879,7 +894,7 @@ export default function DashboardPage() {
             </p>
           </div>
 
-          {/* New Inquiries */}
+          {/* NEW INQUIRIES */}
 
           <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm transition-all duration-300 hover:-translate-y-0.5 hover:shadow-md">
             <div className="flex items-center justify-between">

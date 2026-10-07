@@ -1,161 +1,605 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { use, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { useParams } from "next/navigation";
 
 import {
   ArrowLeft,
   ArrowRight,
-  CalendarDays,
   CheckCircle2,
-  Clock,
-  Globe2,
-  IndianRupee,
+  Clock3,
   LoaderCircle,
   MapPin,
-  MessageSquare,
   PackageOpen,
-  Sparkles,
-  Star,
+  Phone,
+  Users,
 } from "lucide-react";
 
-import Navbar from "@/components/Navbar";
-import Footer from "@/components/Footer";
-
-const FALLBACK_IMAGE = "/images/tourism-placeholder.jpg";
+import Navbar from "@/components/public/Navbar";
+import Footer from "@/components/public/Footer";
 
 /* =========================================================
-   HELPERS
+   SAFE VALUE HELPERS
 ========================================================= */
 
-function getImageUrl(image) {
-  if (!image) return FALLBACK_IMAGE;
-
-  if (typeof image === "string") {
-    return image || FALLBACK_IMAGE;
+function safeString(value, fallback = "") {
+  if (value === null || value === undefined || value === "") {
+    return fallback;
   }
 
-  if (typeof image === "object") {
+  if (typeof value === "string" || typeof value === "number") {
+    return String(value);
+  }
+
+  if (typeof value === "boolean") {
+    return value ? "Yes" : "No";
+  }
+
+  if (Array.isArray(value)) {
+    return value
+      .map((item) => safeString(item))
+      .filter(Boolean)
+      .join(", ");
+  }
+
+  if (typeof value === "object") {
+    if (value.name !== undefined) {
+      return safeString(value.name);
+    }
+
+    if (value.title !== undefined) {
+      return safeString(value.title);
+    }
+
+    if (value.label !== undefined) {
+      return safeString(value.label);
+    }
+
+    if (value.value !== undefined) {
+      return safeString(value.value);
+    }
+
+    if (value.text !== undefined) {
+      return safeString(value.text);
+    }
+
+    if (value.description !== undefined) {
+      return safeString(value.description);
+    }
+
+    if (value.city !== undefined) {
+      return safeString(value.city);
+    }
+
+    return fallback;
+  }
+
+  return fallback;
+}
+
+/* =========================================================
+   DURATION
+========================================================= */
+
+function formatDuration(value) {
+  if (value === null || value === undefined || value === "") {
+    return "";
+  }
+
+  if (typeof value === "string") {
+    return value.trim();
+  }
+
+  if (typeof value === "number") {
+    return `${value} ${value === 1 ? "Day" : "Days"}`;
+  }
+
+  if (typeof value === "object" && !Array.isArray(value)) {
+    const days = value.days;
+    const nights = value.nights;
+
+    if (
+      days !== undefined &&
+      days !== null &&
+      nights !== undefined &&
+      nights !== null
+    ) {
+      const dayNumber = Number(days);
+      const nightNumber = Number(nights);
+
+      const dayText = Number.isFinite(dayNumber)
+        ? `${dayNumber} ${dayNumber === 1 ? "Day" : "Days"}`
+        : safeString(days);
+
+      const nightText = Number.isFinite(nightNumber)
+        ? `${nightNumber} ${nightNumber === 1 ? "Night" : "Nights"}`
+        : safeString(nights);
+
+      return `${dayText} / ${nightText}`;
+    }
+
+    if (days !== undefined && days !== null) {
+      const dayNumber = Number(days);
+
+      return Number.isFinite(dayNumber)
+        ? `${dayNumber} ${dayNumber === 1 ? "Day" : "Days"}`
+        : safeString(days);
+    }
+
+    if (nights !== undefined && nights !== null) {
+      const nightNumber = Number(nights);
+
+      return Number.isFinite(nightNumber)
+        ? `${nightNumber} ${nightNumber === 1 ? "Night" : "Nights"}`
+        : safeString(nights);
+    }
+
+    if (value.duration !== undefined) {
+      return formatDuration(value.duration);
+    }
+
+    return "";
+  }
+
+  return safeString(value);
+}
+
+/* =========================================================
+   IMAGE
+========================================================= */
+
+function normalizeImageUrl(value) {
+  if (!value) {
+    return "";
+  }
+
+  if (typeof value === "string") {
+    const url = value.trim();
+
+    if (!url) {
+      return "";
+    }
+
+    if (
+      !url.startsWith("/") &&
+      !url.startsWith("http://") &&
+      !url.startsWith("https://") &&
+      !url.startsWith("data:")
+    ) {
+      return `/${url}`;
+    }
+
+    return url;
+  }
+
+  if (typeof value === "object") {
     return (
-      image.url ||
-      image.secure_url ||
-      image.secureUrl ||
-      image.path ||
-      FALLBACK_IMAGE
+      normalizeImageUrl(value.url) ||
+      normalizeImageUrl(value.secure_url) ||
+      normalizeImageUrl(value.secureUrl) ||
+      normalizeImageUrl(value.src) ||
+      normalizeImageUrl(value.image) ||
+      normalizeImageUrl(value.imageUrl) ||
+      normalizeImageUrl(value.path) ||
+      ""
     );
   }
 
-  return FALLBACK_IMAGE;
+  return "";
 }
 
-function getPackageTitle(packageData) {
-  return packageData?.title || packageData?.name || "Tour Package";
-}
-
-function getPackagePrice(packageData) {
-  const price = packageData?.price ?? packageData?.estimatedCost;
-
-  if (typeof price === "number") {
-    return `₹${price.toLocaleString("en-IN")}`;
+function getImages(item) {
+  if (!item) {
+    return [];
   }
 
-  if (typeof price === "string") {
-    return price.startsWith("₹") ? price : `₹${price}`;
-  }
+  const images = [];
 
-  if (price && typeof price === "object") {
-    if (price.amount) {
-      return `₹${Number(price.amount).toLocaleString("en-IN")}`;
-    }
+  const directImages = [
+    item.coverImage,
+    item.coverImageUrl,
+    item.image,
+    item.imageUrl,
+    item.bannerImage,
+    item.thumbnail,
+    item.thumbnailUrl,
+  ];
 
-    if (price.min && price.max) {
-      return `₹${Number(price.min).toLocaleString("en-IN")} - ₹${Number(
-        price.max,
-      ).toLocaleString("en-IN")}`;
-    }
+  for (const image of directImages) {
+    const url = normalizeImageUrl(image);
 
-    if (price.min) {
-      return `From ₹${Number(price.min).toLocaleString("en-IN")}`;
-    }
-
-    if (price.max) {
-      return `Up to ₹${Number(price.max).toLocaleString("en-IN")}`;
+    if (url && !images.includes(url)) {
+      images.push(url);
     }
   }
 
-  return "Price on request";
-}
+  const collections = [
+    item.gallery,
+    item.images,
+    item.photos,
+    item.galleryImages,
+    item.media,
+  ];
 
-function getDuration(duration) {
-  if (!duration) return "Flexible duration";
-
-  if (typeof duration === "string" || typeof duration === "number") {
-    return `${duration}`;
-  }
-
-  if (typeof duration === "object") {
-    if (duration.days && duration.nights) {
-      return `${duration.days} Days / ${duration.nights} Nights`;
+  for (const collection of collections) {
+    if (!Array.isArray(collection)) {
+      continue;
     }
 
-    if (duration.days) {
-      return `${duration.days} Days`;
-    }
+    for (const image of collection) {
+      const url = normalizeImageUrl(image);
 
-    if (duration.nights) {
-      return `${duration.nights} Nights`;
+      if (url && !images.includes(url)) {
+        images.push(url);
+      }
     }
   }
 
-  return "Flexible duration";
+  return images;
 }
 
 /* =========================================================
-   PACKAGE DETAILS PAGE
+   TITLE
 ========================================================= */
 
-export default function PackageDetailsPage() {
-  const params = useParams();
-  const slug = params?.slug;
+function getPackageTitle(item) {
+  return safeString(
+    item?.title ?? item?.name ?? item?.packageName ?? item?.packageTitle,
+    "Travel Package",
+  );
+}
 
-  const [packageData, setPackageData] = useState(null);
+/* =========================================================
+   DESCRIPTION
+========================================================= */
+
+function getPackageDescription(item) {
+  return safeString(
+    item?.description ?? item?.shortDescription ?? item?.summary,
+    "Discover a comfortable and memorable travel experience with SST Travels.",
+  );
+}
+
+/* =========================================================
+   PRICE
+========================================================= */
+
+function getPackagePrice(item) {
+  const value =
+    item?.price ?? item?.amount ?? item?.startingPrice ?? item?.cost ?? null;
+
+  if (value === null || value === undefined || value === "") {
+    return null;
+  }
+
+  if (typeof value === "number") {
+    return Number.isFinite(value) ? value : null;
+  }
+
+  if (typeof value === "string") {
+    const number = Number(value);
+
+    return Number.isFinite(number) ? number : null;
+  }
+
+  if (typeof value === "object") {
+    return getPackagePrice({
+      price: value.amount ?? value.value ?? value.min ?? value.price,
+    });
+  }
+
+  return null;
+}
+
+/* =========================================================
+   CURRENCY
+========================================================= */
+
+function getCurrency(item) {
+  const currency = safeString(
+    item?.currency ?? item?.priceCurrency ?? "INR",
+    "INR",
+  );
+
+  return currency.toUpperCase();
+}
+
+/* =========================================================
+   DESTINATION
+========================================================= */
+
+function getDestinationName(item) {
+  const value = item?.destination;
+
+  if (typeof value === "string") {
+    return value;
+  }
+
+  if (value && typeof value === "object") {
+    return (
+      safeString(value.name) ||
+      safeString(value.title) ||
+      safeString(value.city) ||
+      safeString(value.destinationName) ||
+      ""
+    );
+  }
+
+  return (
+    safeString(item?.destinationName) ||
+    safeString(item?.location) ||
+    safeString(item?.city)
+  );
+}
+
+/* =========================================================
+   CAPACITY
+========================================================= */
+
+function getCapacity(item) {
+  const value =
+    item?.capacity ??
+    item?.maxGuests ??
+    item?.guests ??
+    item?.groupSize ??
+    item?.maxPeople ??
+    "";
+
+  return safeString(value);
+}
+
+/* =========================================================
+   HIGHLIGHTS
+========================================================= */
+
+function getHighlights(item) {
+  const source = Array.isArray(item?.highlights)
+    ? item.highlights
+    : Array.isArray(item?.features)
+      ? item.features
+      : Array.isArray(item?.included)
+        ? item.included
+        : [];
+
+  return source
+    .map((highlight) => {
+      if (typeof highlight === "string" || typeof highlight === "number") {
+        return String(highlight);
+      }
+
+      if (highlight && typeof highlight === "object") {
+        return (
+          safeString(highlight.title) ||
+          safeString(highlight.name) ||
+          safeString(highlight.label) ||
+          safeString(highlight.description) ||
+          safeString(highlight.text)
+        );
+      }
+
+      return "";
+    })
+    .filter(Boolean);
+}
+
+/* =========================================================
+   ITINERARY
+========================================================= */
+
+function getItinerary(item) {
+  const source = Array.isArray(item?.itinerary)
+    ? item.itinerary
+    : Array.isArray(item?.days)
+      ? item.days
+      : [];
+
+  return source.map((day, index) => {
+    if (typeof day === "string" || typeof day === "number") {
+      return {
+        title: `Day ${index + 1}`,
+        description: String(day),
+      };
+    }
+
+    if (day && typeof day === "object") {
+      const title =
+        safeString(day.title) ||
+        safeString(day.day) ||
+        safeString(day.name) ||
+        `Day ${index + 1}`;
+
+      const descriptionValue =
+        day.description ??
+        day.details ??
+        day.activities ??
+        day.activity ??
+        day.summary ??
+        "";
+
+      return {
+        title,
+        description: safeString(descriptionValue),
+      };
+    }
+
+    return {
+      title: `Day ${index + 1}`,
+      description: "",
+    };
+  });
+}
+
+/* =========================================================
+   EXTRACT PACKAGE
+========================================================= */
+
+function extractPackage(data) {
+  if (!data) {
+    return null;
+  }
+
+  if (data.package && typeof data.package === "object") {
+    return data.package;
+  }
+
+  if (data.data?.package && typeof data.data.package === "object") {
+    return data.data.package;
+  }
+
+  if (data.data && !Array.isArray(data.data) && typeof data.data === "object") {
+    return data.data;
+  }
+
+  if (typeof data === "object" && !Array.isArray(data)) {
+    return data;
+  }
+
+  return null;
+}
+
+/* =========================================================
+   NORMALIZE PACKAGE
+========================================================= */
+
+function normalizePackage(item) {
+  if (!item || typeof item !== "object") {
+    return null;
+  }
+
+  const images = getImages(item);
+
+  return {
+    id: safeString(item._id ?? item.id ?? item.slug),
+
+    slug: safeString(item.slug ?? item._id ?? item.id),
+
+    title: getPackageTitle(item),
+
+    description: getPackageDescription(item),
+
+    price: getPackagePrice(item),
+
+    currency: getCurrency(item),
+
+    duration: formatDuration(
+      item.duration ?? item.durationText ?? item.estimatedDuration ?? item.days,
+    ),
+
+    destination: getDestinationName(item),
+
+    capacity: getCapacity(item),
+
+    images,
+
+    highlights: getHighlights(item),
+
+    itinerary: getItinerary(item),
+  };
+}
+
+/* =========================================================
+   PAGE
+========================================================= */
+
+export default function PackageDetailPage({ params }) {
+  const resolvedParams = use(params);
+
+  const slug = resolvedParams?.slug;
+
+  const [tourPackage, setTourPackage] = useState(null);
+
   const [loading, setLoading] = useState(true);
-  const [errorMessage, setErrorMessage] = useState("");
+
+  const [error, setError] = useState("");
+
+  const [activeImage, setActiveImage] = useState(0);
 
   /* =======================================================
-     LOAD PACKAGE
+     FETCH PACKAGE
   ======================================================= */
 
   useEffect(() => {
-    if (!slug) return;
+    let mounted = true;
 
     async function loadPackage() {
+      if (!slug) {
+        if (mounted) {
+          setError("Package was not found.");
+          setLoading(false);
+        }
+
+        return;
+      }
+
       try {
         setLoading(true);
-        setErrorMessage("");
+        setError("");
 
         const response = await fetch(
           `/api/public/packages/${encodeURIComponent(slug)}`,
+          {
+            cache: "no-store",
+          },
         );
 
-        const result = await response.json();
+        const data = await response.json().catch(() => null);
 
-        if (!response.ok || !result.success) {
-          throw new Error(result.message || "Failed to load package.");
+        if (!response.ok) {
+          throw new Error(data?.message || "Unable to load this package.");
         }
 
-        setPackageData(result.data);
-      } catch (error) {
-        console.error("Load package error:", error);
+        const rawPackage = extractPackage(data);
 
-        setErrorMessage(error.message || "Failed to load package.");
+        if (!rawPackage) {
+          throw new Error("Package not found.");
+        }
+
+        /*
+         * IMPORTANT:
+         *
+         * Convert the API object into a safe
+         * UI object BEFORE putting it into state.
+         *
+         * Therefore:
+         *
+         * duration.days/nights
+         *
+         * becomes:
+         *
+         * "5 Days / 4 Nights"
+         */
+
+        const normalizedPackage = normalizePackage(rawPackage);
+
+        if (!normalizedPackage) {
+          throw new Error("Invalid package data.");
+        }
+
+        if (mounted) {
+          setTourPackage(normalizedPackage);
+
+          setActiveImage(0);
+        }
+      } catch (requestError) {
+        console.error("Package detail fetch error:", requestError);
+
+        if (mounted) {
+          setError(requestError?.message || "Unable to load this package.");
+
+          setTourPackage(null);
+        }
       } finally {
-        setLoading(false);
+        if (mounted) {
+          setLoading(false);
+        }
       }
     }
 
     loadPackage();
+
+    return () => {
+      mounted = false;
+    };
   }, [slug]);
 
   /* =======================================================
@@ -164,494 +608,461 @@ export default function PackageDetailsPage() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-[#f5f8f6]">
+      <>
         <Navbar />
 
-        <main className="flex min-h-[65vh] items-center justify-center px-6">
-          <div className="flex flex-col items-center text-center">
-            <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-emerald-50">
-              <LoaderCircle
-                size={30}
-                className="animate-spin text-emerald-600"
-              />
+        <main className="min-h-screen bg-[#f4faf7] px-5 pb-20 pt-32 sm:px-8 lg:px-10">
+          <div className="mx-auto max-w-[1380px]">
+            <div className="flex min-h-[55vh] items-center justify-center">
+              <div className="text-center">
+                <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl bg-[#e5f7f0] text-[#07805f]">
+                  <LoaderCircle size={30} className="animate-spin" />
+                </div>
+
+                <h1 className="mt-5 text-xl font-black text-[#073f35]">
+                  Loading package...
+                </h1>
+
+                <p className="mt-2 text-sm text-[#71857f]">
+                  Please wait while we prepare the details.
+                </p>
+              </div>
             </div>
-
-            <p className="mt-5 text-sm font-semibold text-slate-700">
-              Loading package...
-            </p>
-
-            <p className="mt-1 text-xs text-slate-400">
-              Preparing your travel experience
-            </p>
           </div>
         </main>
 
         <Footer />
-      </div>
+      </>
     );
   }
 
   /* =======================================================
-     ERROR / NOT FOUND
+     ERROR
   ======================================================= */
 
-  if (errorMessage || !packageData) {
+  if (error || !tourPackage) {
     return (
-      <div className="min-h-screen bg-[#f5f8f6]">
+      <>
         <Navbar />
 
-        <main className="flex min-h-[65vh] items-center justify-center px-6">
-          <div className="w-full max-w-lg rounded-[28px] border border-slate-200 bg-white p-8 text-center shadow-[0_15px_45px_rgba(15,23,42,0.08)] sm:p-10">
-            <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl bg-emerald-50">
-              <PackageOpen size={32} className="text-emerald-600" />
+        <main className="min-h-screen bg-[#f4faf7] px-5 pb-20 pt-32 sm:px-8 lg:px-10">
+          <div className="mx-auto flex min-h-[60vh] max-w-[1380px] items-center justify-center">
+            <div className="w-full max-w-xl rounded-[30px] border border-[#dceee8] bg-white p-8 text-center shadow-[0_20px_60px_rgba(0,70,55,0.08)] sm:p-10">
+              <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl bg-[#eaf8f3] text-[#07805f]">
+                <PackageOpen size={28} />
+              </div>
+
+              <h1 className="mt-6 text-2xl font-black text-[#073f35]">
+                Package not found
+              </h1>
+
+              <p className="mt-3 text-sm leading-6 text-[#71857f]">
+                {error ||
+                  "The travel package you requested could not be found."}
+              </p>
+
+              {/* BACK BUTTON */}
+
+              <Link
+                href="/packages"
+                className="mt-7 inline-flex items-center gap-2 rounded-xl bg-[#07805f] px-5 py-3 text-sm font-bold text-white transition hover:bg-[#056f4e]"
+              >
+                <ArrowLeft size={17} />
+                Back to Packages
+              </Link>
             </div>
-
-            <h1 className="mt-5 text-2xl font-extrabold text-slate-900">
-              Package Not Found
-            </h1>
-
-            <p className="mt-3 text-sm leading-6 text-slate-500">
-              {errorMessage || "This package is unavailable."}
-            </p>
-
-            <Link
-              href="/packages"
-              className="mt-7 inline-flex items-center gap-2 rounded-xl bg-emerald-700 px-5 py-3 text-sm font-bold text-white transition hover:bg-emerald-800"
-            >
-              <ArrowLeft size={17} />
-              Browse Packages
-            </Link>
           </div>
         </main>
 
         <Footer />
-      </div>
+      </>
     );
   }
 
   /* =======================================================
-     DATA
+     NORMALIZED VALUES
   ======================================================= */
 
-  const title = getPackageTitle(packageData);
+  const images = tourPackage.images || [];
 
-  const coverImage = getImageUrl(packageData.coverImage);
+  const title = tourPackage.title;
 
-  const gallery = Array.isArray(packageData.gallery) ? packageData.gallery : [];
+  const description = tourPackage.description;
 
-  const destination = packageData.destination;
+  const price = tourPackage.price;
 
-  const price = getPackagePrice(packageData);
+  const currency = tourPackage.currency;
 
-  const duration = getDuration(packageData.duration);
+  const duration = tourPackage.duration;
+
+  const destination = tourPackage.destination;
+
+  const capacity = tourPackage.capacity;
+
+  const highlights = tourPackage.highlights || [];
+
+  const itinerary = tourPackage.itinerary || [];
+
+  const currentImage = images[activeImage] || "";
+
+  const packageId = tourPackage.id || tourPackage.slug || slug;
 
   /* =======================================================
-     MAIN PAGE
+     RETURN
   ======================================================= */
 
   return (
-    <div className="min-h-screen bg-[#f5f8f6] text-slate-900">
+    <>
       <Navbar />
 
-      <main>
+      <main className="min-h-screen overflow-x-hidden bg-[#f4faf7]">
         {/* =================================================
             HERO
         ================================================= */}
-        <section className="relative overflow-hidden bg-[#073b32]">
-          {/* Decorative background */}
-          <div className="absolute -left-32 -top-32 h-96 w-96 rounded-full bg-emerald-400/10 blur-3xl" />
 
-          <div className="absolute -right-32 top-10 h-[420px] w-[420px] rounded-full bg-teal-300/10 blur-3xl" />
+        <section className="relative overflow-hidden bg-[#064c40]">
+          <div className="pointer-events-none absolute -left-40 top-0 h-[500px] w-[500px] rounded-full bg-[#0c8b6d]/20 blur-[120px]" />
 
-          {/* Hero content */}
-          <div className="relative mx-auto max-w-7xl px-5 pb-16 pt-8 sm:px-6 sm:pb-20 lg:px-8">
-            {/* Back button */}
-            <Link
-              href="/packages"
-              className="mb-8 inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/10 px-4 py-2 text-sm font-medium text-white backdrop-blur transition hover:bg-white/15"
-            >
-              <ArrowLeft size={16} />
-              Back to Packages
-            </Link>
+          <div className="pointer-events-none absolute -right-40 top-20 h-[500px] w-[500px] rounded-full bg-[#55c8a6]/10 blur-[120px]" />
 
-            <div className="grid items-center gap-10 lg:grid-cols-[1.15fr_0.85fr]">
-              {/* =================================================
-                  LEFT HERO CONTENT
-              ================================================= */}
-              <div>
-                {/* Label */}
-                <div className="mb-5 inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/10 px-4 py-2 text-sm font-semibold text-emerald-200 backdrop-blur">
-                  <PackageOpen size={16} />
-                  Travel Package
-                </div>
+          <div className="relative mx-auto max-w-[1450px] px-5 pb-28 pt-24 sm:px-8 lg:px-10">
+            {/* =================================================
+                BACK TO PACKAGES
+            ================================================= */}
 
-                {/* Title */}
-                <h1 className="max-w-3xl text-4xl font-extrabold leading-tight tracking-tight text-white sm:text-5xl lg:text-6xl">
-                  {title}
-                </h1>
+            <div className="mb-10">
+              <Link
+                href="/packages"
+                className="group inline-flex items-center gap-2.5 rounded-full border border-white/30 bg-white/10 px-5 py-3 text-sm font-bold text-white shadow-lg backdrop-blur-md transition-all duration-300 hover:-translate-y-0.5 hover:border-white/50 hover:bg-white hover:text-[#075847]"
+              >
+                <ArrowLeft
+                  size={18}
+                  className="transition-transform duration-300 group-hover:-translate-x-1"
+                />
 
-                {/* Destination */}
-                {destination?.name && (
-                  <div className="mt-5 flex items-center gap-2 text-emerald-100/80">
-                    <MapPin size={18} className="text-emerald-300" />
+                <span>Back to Packages</span>
+              </Link>
+            </div>
 
-                    <span className="text-sm font-medium sm:text-base">
-                      {destination.name}
-                      {destination.state ? `, ${destination.state}` : ""}
-                    </span>
+            <div className="max-w-4xl">
+              <div className="mb-5 inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/10 px-4 py-2 text-xs font-semibold text-emerald-100 backdrop-blur-md">
+                <PackageOpen size={14} />
+                SST Travels Package
+              </div>
+
+              <h1 className="text-4xl font-black leading-tight tracking-[-1.5px] text-white sm:text-5xl lg:text-6xl">
+                {title}
+              </h1>
+
+              <p className="mt-5 max-w-3xl text-sm leading-7 text-emerald-100/90 sm:text-base">
+                {description}
+              </p>
+
+              <div className="mt-7 flex flex-wrap gap-3">
+                {destination && (
+                  <div className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/10 px-4 py-2.5 text-xs font-semibold text-white/90 backdrop-blur-md">
+                    <MapPin size={15} />
+
+                    {destination}
                   </div>
                 )}
 
-                {/* Description */}
-                <p className="mt-6 max-w-2xl text-sm leading-7 text-emerald-50/75 sm:text-base">
-                  {packageData.description ||
-                    "Discover a memorable travel experience with SST Travels."}
-                </p>
+                {duration && (
+                  <div className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/10 px-4 py-2.5 text-xs font-semibold text-white/90 backdrop-blur-md">
+                    <Clock3 size={15} />
 
-                {/* Hero stats */}
-                <div className="mt-8 grid max-w-2xl gap-3 sm:grid-cols-3">
-                  <div className="rounded-2xl border border-white/10 bg-white/10 p-4 backdrop-blur">
-                    <div className="flex items-center gap-2 text-emerald-300">
-                      <IndianRupee size={17} />
-                      <span className="text-xs font-medium">
-                        Estimated Price
-                      </span>
-                    </div>
-
-                    <p className="mt-2 text-base font-bold text-white">
-                      {price}
-                    </p>
+                    {duration}
                   </div>
+                )}
 
-                  <div className="rounded-2xl border border-white/10 bg-white/10 p-4 backdrop-blur">
-                    <div className="flex items-center gap-2 text-emerald-300">
-                      <Clock size={17} />
-                      <span className="text-xs font-medium">Duration</span>
-                    </div>
+                {capacity && (
+                  <div className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/10 px-4 py-2.5 text-xs font-semibold text-white/90 backdrop-blur-md">
+                    <Users size={15} />
 
-                    <p className="mt-2 text-sm font-bold text-white">
-                      {duration}
-                    </p>
+                    {capacity}
                   </div>
-
-                  <div className="rounded-2xl border border-white/10 bg-white/10 p-4 backdrop-blur">
-                    <div className="flex items-center gap-2 text-emerald-300">
-                      <Star size={17} fill="currentColor" />
-                      <span className="text-xs font-medium">Experience</span>
-                    </div>
-
-                    <p className="mt-2 text-sm font-bold text-white">
-                      Memorable journeys
-                    </p>
-                  </div>
-                </div>
-              </div>
-
-              {/* =================================================
-                  HERO IMAGE
-              ================================================= */}
-              <div className="relative">
-                <div className="overflow-hidden rounded-[30px] border border-white/15 bg-white/10 p-2 shadow-2xl">
-                  <div className="relative overflow-hidden rounded-[24px]">
-                    <img
-                      src={coverImage}
-                      alt={title}
-                      className="h-[360px] w-full object-cover transition duration-700 hover:scale-105 sm:h-[440px]"
-                      onError={(event) => {
-                        event.currentTarget.src = FALLBACK_IMAGE;
-                      }}
-                    />
-
-                    {/* Image overlay */}
-                    <div className="absolute inset-0 bg-gradient-to-t from-black/45 via-transparent to-transparent" />
-
-                    {/* Image bottom badge */}
-                    <div className="absolute bottom-5 left-5 right-5">
-                      <div className="flex items-center gap-3 rounded-2xl border border-white/20 bg-black/25 p-4 text-white backdrop-blur-md">
-                        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white/15">
-                          <Globe2 size={20} />
-                        </div>
-
-                        <div>
-                          <p className="text-xs text-white/60">
-                            Explore with SST Travels
-                          </p>
-
-                          <p className="text-sm font-bold">
-                            Your journey starts here
-                          </p>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
+                )}
               </div>
             </div>
           </div>
 
-          {/* Bottom curve */}
-          <div className="absolute bottom-0 left-0 right-0 h-8 bg-[#f5f8f6] [clip-path:ellipse(60%_100%_at_50%_100%)]" />
+          <div className="absolute bottom-[-1px] left-[-5%] h-10 w-[110%] rounded-[50%_50%_0_0] bg-[#f4faf7]" />
         </section>
 
         {/* =================================================
-            MAIN DETAILS
+            MAIN CONTENT
         ================================================= */}
-        <section className="mx-auto max-w-7xl px-5 py-10 sm:px-6 lg:px-8">
-          <div className="grid gap-8 lg:grid-cols-[1.5fr_0.75fr]">
-            {/* =================================================
-                LEFT CONTENT
-            ================================================= */}
-            <div className="space-y-8">
-              {/* Overview */}
-              <section className="rounded-[28px] border border-slate-200 bg-white p-6 shadow-sm sm:p-8">
-                <div className="mb-6">
-                  <div className="mb-2 flex items-center gap-2 text-sm font-semibold text-emerald-700">
-                    <span className="h-1.5 w-1.5 rounded-full bg-emerald-600" />
-                    Travel Experience
+
+        <section className="px-5 py-12 sm:px-8 lg:px-10 lg:py-16">
+          <div className="mx-auto max-w-[1380px]">
+            <div className="grid gap-10 lg:grid-cols-[1.08fr_0.92fr]">
+              {/* =================================================
+                  IMAGE GALLERY
+              ================================================= */}
+
+              <div>
+                <div className="overflow-hidden rounded-[30px] border border-[#dceee8] bg-white p-3 shadow-[0_20px_55px_rgba(0,70,55,0.08)]">
+                  <div className="relative h-[350px] overflow-hidden rounded-[24px] bg-[#dcefe8] sm:h-[460px] lg:h-[520px]">
+                    {currentImage ? (
+                      <img
+                        src={currentImage}
+                        alt={title}
+                        className="h-full w-full object-cover"
+                        onError={(event) => {
+                          event.currentTarget.style.display = "none";
+                        }}
+                      />
+                    ) : (
+                      <div className="flex h-full items-center justify-center bg-gradient-to-br from-[#e3f7ef] to-[#c9e8dd]">
+                        <PackageOpen
+                          size={70}
+                          strokeWidth={1.3}
+                          className="text-[#07805f]"
+                        />
+                      </div>
+                    )}
+
+                    <div className="absolute inset-x-0 bottom-0 h-32 bg-gradient-to-t from-black/40 to-transparent" />
                   </div>
 
-                  <h2 className="text-2xl font-extrabold text-slate-900 sm:text-3xl">
-                    Package Overview
+                  {images.length > 1 && (
+                    <div className="mt-3 grid grid-cols-4 gap-3 sm:grid-cols-5">
+                      {images.slice(0, 5).map((image, index) => (
+                        <button
+                          key={`${image}-${index}`}
+                          type="button"
+                          onClick={() => setActiveImage(index)}
+                          className={`relative h-20 overflow-hidden rounded-xl border-2 transition-all ${
+                            activeImage === index
+                              ? "border-[#07805f] ring-2 ring-[#07805f]/10"
+                              : "border-transparent"
+                          }`}
+                        >
+                          <img
+                            src={image}
+                            alt={`${title} ${index + 1}`}
+                            className="h-full w-full object-cover"
+                          />
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* =================================================
+                  PACKAGE SUMMARY
+              ================================================= */}
+
+              <div>
+                <div className="rounded-[30px] border border-[#dceee8] bg-white p-7 shadow-[0_20px_55px_rgba(0,70,55,0.08)] sm:p-8">
+                  <p className="text-xs font-black uppercase tracking-[0.18em] text-[#07805f]">
+                    Package Details
+                  </p>
+
+                  <h2 className="mt-3 text-3xl font-black tracking-[-1px] text-[#073f35]">
+                    {title}
                   </h2>
-                </div>
 
-                <div className="whitespace-pre-line text-sm leading-7 text-slate-600 sm:text-base sm:leading-8">
-                  {packageData.description ||
-                    "No description is available for this package."}
-                </div>
+                  {price !== null && (
+                    <div className="mt-7 rounded-2xl bg-[#effbf6] p-5">
+                      <p className="text-xs font-bold uppercase tracking-[0.14em] text-[#789088]">
+                        Starting From
+                      </p>
 
-                {/* Highlights */}
-                {Array.isArray(packageData.highlights) &&
-                  packageData.highlights.length > 0 && (
-                    <div className="mt-9 border-t border-slate-100 pt-8">
-                      <div className="mb-5 flex items-center gap-3">
-                        <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-50 text-emerald-700">
-                          <Sparkles size={19} />
+                      <p className="mt-1 text-3xl font-black text-[#075847]">
+                        {currency === "USD"
+                          ? `$${Number(price).toLocaleString("en-IN")}`
+                          : `₹${Number(price).toLocaleString("en-IN")}`}
+                      </p>
+                    </div>
+                  )}
+
+                  <div className="mt-7 space-y-3">
+                    {destination && (
+                      <div className="flex items-center gap-3 rounded-2xl border border-[#edf3f0] bg-[#fafcfb] p-4">
+                        <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-[#eaf8f3] text-[#07805f]">
+                          <MapPin size={19} />
                         </div>
 
                         <div>
-                          <h3 className="text-xl font-extrabold text-slate-900">
-                            Package Highlights
-                          </h3>
+                          <p className="text-xs font-bold uppercase tracking-wide text-[#8aa098]">
+                            Destination
+                          </p>
 
-                          <p className="mt-0.5 text-xs text-slate-400">
-                            What makes this journey special
+                          <p className="mt-1 text-sm font-bold text-slate-800">
+                            {destination}
                           </p>
                         </div>
                       </div>
+                    )}
 
-                      <div className="grid gap-3 sm:grid-cols-2">
-                        {packageData.highlights.map((highlight, index) => (
-                          <div
-                            key={`${highlight}-${index}`}
-                            className="flex items-start gap-3 rounded-2xl border border-slate-100 bg-slate-50 p-4"
-                          >
-                            <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-emerald-100 text-emerald-700">
-                              <CheckCircle2 size={16} />
-                            </div>
+                    {duration && (
+                      <div className="flex items-center gap-3 rounded-2xl border border-[#edf3f0] bg-[#fafcfb] p-4">
+                        <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-[#eaf8f3] text-[#07805f]">
+                          <Clock3 size={19} />
+                        </div>
 
-                            <span className="pt-1 text-sm leading-5 text-slate-600">
-                              {highlight}
-                            </span>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-              </section>
+                        <div>
+                          <p className="text-xs font-bold uppercase tracking-wide text-[#8aa098]">
+                            Duration
+                          </p>
 
-              {/* =================================================
-                  GALLERY
-              ================================================= */}
-              {gallery.length > 0 && (
-                <section className="rounded-[28px] border border-slate-200 bg-white p-6 shadow-sm sm:p-8">
-                  <div className="mb-6 flex items-end justify-between gap-4">
-                    <div>
-                      <div className="mb-2 flex items-center gap-2 text-sm font-semibold text-emerald-700">
-                        <span className="h-1.5 w-1.5 rounded-full bg-emerald-600" />
-                        Visual Journey
-                      </div>
-
-                      <h2 className="text-2xl font-extrabold text-slate-900">
-                        Package Gallery
-                      </h2>
-                    </div>
-
-                    <div className="hidden rounded-full bg-emerald-50 px-3 py-1.5 text-xs font-semibold text-emerald-700 sm:block">
-                      {gallery.length} Photos
-                    </div>
-                  </div>
-
-                  <div className="grid gap-4 sm:grid-cols-2">
-                    {gallery.map((image, index) => (
-                      <div
-                        key={image?._id || image?.url || index}
-                        className="group relative overflow-hidden rounded-2xl bg-slate-100"
-                      >
-                        <img
-                          src={getImageUrl(image)}
-                          alt={`${title} gallery ${index + 1}`}
-                          className="h-64 w-full object-cover transition duration-700 group-hover:scale-110 sm:h-72"
-                          onError={(event) => {
-                            event.currentTarget.src = FALLBACK_IMAGE;
-                          }}
-                        />
-
-                        <div className="absolute inset-0 bg-gradient-to-t from-black/40 via-transparent to-transparent opacity-0 transition duration-300 group-hover:opacity-100" />
-
-                        <div className="absolute bottom-4 left-4 rounded-full bg-black/35 px-3 py-1.5 text-xs font-medium text-white opacity-0 backdrop-blur transition duration-300 group-hover:opacity-100">
-                          {index + 1} / {gallery.length}
+                          <p className="mt-1 text-sm font-bold text-slate-800">
+                            {duration}
+                          </p>
                         </div>
                       </div>
-                    ))}
-                  </div>
-                </section>
-              )}
-            </div>
+                    )}
 
-            {/* =================================================
-                RIGHT SIDEBAR
-            ================================================= */}
-            <aside className="lg:sticky lg:top-8 lg:h-fit">
-              <div className="overflow-hidden rounded-[28px] bg-[#073b32] shadow-[0_18px_50px_rgba(15,23,42,0.14)]">
-                {/* Sidebar header */}
-                <div className="relative overflow-hidden p-6 sm:p-7">
-                  <div className="absolute -right-20 -top-20 h-52 w-52 rounded-full bg-emerald-400/10 blur-3xl" />
+                    {capacity && (
+                      <div className="flex items-center gap-3 rounded-2xl border border-[#edf3f0] bg-[#fafcfb] p-4">
+                        <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-[#eaf8f3] text-[#07805f]">
+                          <Users size={19} />
+                        </div>
 
-                  <div className="relative">
-                    <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-white/10 text-emerald-300">
-                      <PackageOpen size={23} />
-                    </div>
+                        <div>
+                          <p className="text-xs font-bold uppercase tracking-wide text-[#8aa098]">
+                            Group Size
+                          </p>
 
-                    <p className="mt-5 text-xs font-semibold uppercase tracking-wider text-emerald-300">
-                      Package Details
-                    </p>
-
-                    <h2 className="mt-2 text-xl font-extrabold text-white">
-                      {title}
-                    </h2>
-                  </div>
-                </div>
-
-                {/* Quick information */}
-                <div className="border-t border-white/10 p-6 sm:p-7">
-                  <div className="space-y-5">
-                    {/* Duration */}
-                    <div className="flex items-start gap-3">
-                      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white/10 text-emerald-300">
-                        <CalendarDays size={18} />
+                          <p className="mt-1 text-sm font-bold text-slate-800">
+                            {capacity}
+                          </p>
+                        </div>
                       </div>
-
-                      <div>
-                        <p className="text-xs font-medium text-emerald-100/50">
-                          Duration
-                        </p>
-
-                        <p className="mt-1 text-sm font-semibold text-white">
-                          {duration}
-                        </p>
-                      </div>
-                    </div>
-
-                    {/* Destination */}
-                    <div className="flex items-start gap-3">
-                      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white/10 text-emerald-300">
-                        <MapPin size={18} />
-                      </div>
-
-                      <div>
-                        <p className="text-xs font-medium text-emerald-100/50">
-                          Destination
-                        </p>
-
-                        <p className="mt-1 text-sm font-semibold text-white">
-                          {destination?.name || "Not specified"}
-                        </p>
-                      </div>
-                    </div>
-
-                    {/* Price */}
-                    <div className="flex items-start gap-3">
-                      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white/10 text-emerald-300">
-                        <IndianRupee size={18} />
-                      </div>
-
-                      <div>
-                        <p className="text-xs font-medium text-emerald-100/50">
-                          Estimated Price
-                        </p>
-
-                        <p className="mt-1 text-base font-extrabold text-white">
-                          {price}
-                        </p>
-                      </div>
-                    </div>
+                    )}
                   </div>
 
-                  {/* Divider */}
-                  <div className="my-7 h-px bg-white/10" />
-
-                  {/* Inquiry CTA */}
                   <Link
-                    href={`/contact?packageId=${packageData._id}`}
-                    className="group flex w-full items-center justify-center gap-2 rounded-xl bg-white px-5 py-3.5 text-sm font-bold text-[#073b32] transition hover:bg-emerald-50"
+                    href={`/contact?packageId=${encodeURIComponent(packageId)}`}
+                    className="group mt-7 flex w-full items-center justify-center gap-2 rounded-2xl bg-[#07805f] px-6 py-4 text-sm font-black text-white shadow-[0_12px_30px_rgba(0,110,80,0.18)] transition-all duration-300 hover:-translate-y-0.5 hover:bg-[#056f4e]"
                   >
-                    <MessageSquare size={17} />
-                    Enquire About This Package
+                    Plan This Trip
                     <ArrowRight
-                      size={17}
+                      size={18}
                       className="transition-transform duration-300 group-hover:translate-x-1"
                     />
                   </Link>
 
-                  <p className="mt-4 text-center text-xs leading-5 text-emerald-100/45">
-                    Have questions? Send us an inquiry and we'll help you plan
-                    your trip.
-                  </p>
+                  <a
+                    href="tel:+917708985232"
+                    className="mt-3 flex w-full items-center justify-center gap-2 rounded-2xl border border-[#dceee8] bg-white px-6 py-4 text-sm font-bold text-[#075847] transition hover:border-[#a8d9ca] hover:bg-[#f3fbf8]"
+                  >
+                    <Phone size={17} />
+                    Call SST Travels
+                  </a>
                 </div>
               </div>
-            </aside>
-          </div>
-        </section>
+            </div>
 
-        {/* =================================================
-            BOTTOM JOURNEY SECTION
-        ================================================= */}
-        <section className="mx-auto max-w-7xl px-5 pb-14 sm:px-6 lg:px-8">
-          <div className="relative overflow-hidden rounded-[30px] bg-white p-7 shadow-sm ring-1 ring-slate-200 sm:p-9">
-            <div className="absolute -right-20 -top-24 h-64 w-64 rounded-full bg-emerald-100/60 blur-3xl" />
+            {/* =================================================
+                DESCRIPTION
+            ================================================= */}
 
-            <div className="relative flex flex-col gap-6 sm:flex-row sm:items-center sm:justify-between">
-              <div className="flex items-start gap-4">
-                <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-emerald-50 text-emerald-700">
-                  <Sparkles size={21} />
-                </div>
+            <div className="mt-10 grid gap-8 lg:grid-cols-[1.15fr_0.85fr]">
+              <div className="rounded-[30px] border border-[#dceee8] bg-white p-7 shadow-[0_15px_45px_rgba(0,70,55,0.06)] sm:p-9">
+                <p className="text-xs font-black uppercase tracking-[0.18em] text-[#07805f]">
+                  About This Package
+                </p>
 
-                <div>
-                  <p className="text-xs font-bold uppercase tracking-wider text-emerald-700">
-                    Your Journey
-                  </p>
+                <h2 className="mt-3 text-2xl font-black text-[#073f35] sm:text-3xl">
+                  Your Journey, Planned With Care
+                </h2>
 
-                  <h3 className="mt-1 text-xl font-extrabold text-slate-900">
-                    Ready to explore?
-                  </h3>
-
-                  <p className="mt-1 text-sm leading-6 text-slate-500">
-                    Talk to SST Travels and start planning your next memorable
-                    journey.
-                  </p>
-                </div>
+                <p className="mt-5 whitespace-pre-line text-sm leading-7 text-[#687f77] sm:text-base">
+                  {description}
+                </p>
               </div>
 
+              {/* =================================================
+                  HIGHLIGHTS
+              ================================================= */}
+
+              {highlights.length > 0 && (
+                <div className="rounded-[30px] border border-[#dceee8] bg-white p-7 shadow-[0_15px_45px_rgba(0,70,55,0.06)] sm:p-9">
+                  <p className="text-xs font-black uppercase tracking-[0.18em] text-[#07805f]">
+                    Highlights
+                  </p>
+
+                  <div className="mt-5 space-y-3">
+                    {highlights.map((highlight, index) => (
+                      <div
+                        key={`${highlight}-${index}`}
+                        className="flex items-start gap-3"
+                      >
+                        <CheckCircle2
+                          size={19}
+                          className="mt-0.5 shrink-0 text-[#07805f]"
+                        />
+
+                        <span className="text-sm leading-6 text-[#526b63]">
+                          {highlight}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* =================================================
+                ITINERARY
+            ================================================= */}
+
+            {itinerary.length > 0 && (
+              <section className="mt-10 rounded-[30px] border border-[#dceee8] bg-white p-7 shadow-[0_15px_45px_rgba(0,70,55,0.06)] sm:p-9">
+                <p className="text-xs font-black uppercase tracking-[0.18em] text-[#07805f]">
+                  Itinerary
+                </p>
+
+                <h2 className="mt-3 text-2xl font-black text-[#073f35] sm:text-3xl">
+                  Journey Plan
+                </h2>
+
+                <div className="mt-7 space-y-4">
+                  {itinerary.map((day, index) => (
+                    <div
+                      key={`${day.title}-${index}`}
+                      className="rounded-2xl border border-[#e5f0ec] bg-[#fafcfb] p-5"
+                    >
+                      <div className="flex items-start gap-4">
+                        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[#07805f] text-sm font-black text-white">
+                          {index + 1}
+                        </div>
+
+                        <div>
+                          <h3 className="font-black text-[#073f35]">
+                            {day.title}
+                          </h3>
+
+                          {day.description && (
+                            <p className="mt-2 text-sm leading-6 text-[#6b8179]">
+                              {day.description}
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </section>
+            )}
+
+            {/* =================================================
+                BOTTOM BACK BUTTON
+            ================================================= */}
+
+            <div className="mt-10">
               <Link
-                href={`/contact?packageId=${packageData._id}`}
-                className="group inline-flex shrink-0 items-center justify-center gap-2 rounded-xl bg-emerald-700 px-5 py-3 text-sm font-bold text-white transition hover:bg-emerald-800"
+                href="/packages"
+                className="group inline-flex items-center gap-2 rounded-full border border-[#cfe5de] bg-white px-5 py-3 text-sm font-bold text-[#075847] shadow-sm transition-all duration-300 hover:-translate-y-0.5 hover:border-[#07805f] hover:bg-[#effbf6]"
               >
-                Start Planning
-                <ArrowRight
+                <ArrowLeft
                   size={17}
-                  className="transition-transform group-hover:translate-x-1"
+                  className="transition-transform duration-300 group-hover:-translate-x-1"
                 />
+                Back to Packages
               </Link>
             </div>
           </div>
@@ -659,6 +1070,6 @@ export default function PackageDetailsPage() {
       </main>
 
       <Footer />
-    </div>
+    </>
   );
 }

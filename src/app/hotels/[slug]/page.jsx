@@ -67,7 +67,9 @@ function formatPrice(price) {
   const max = Number(price.max || 0);
 
   if (min && max) {
-    return `₹${min.toLocaleString("en-IN")} - ₹${max.toLocaleString("en-IN")}`;
+    return `₹${min.toLocaleString("en-IN")} - ₹${max.toLocaleString(
+      "en-IN",
+    )}`;
   }
 
   return `From ₹${(min || max).toLocaleString("en-IN")}`;
@@ -199,7 +201,8 @@ export default function HotelDetailsPage() {
 
   const gallery = Array.isArray(hotel.gallery) ? hotel.gallery : [];
 
-  const destinationName = hotel.destination?.name || "Travel Destination";
+  const destinationName =
+    hotel.destination?.name || "Travel Destination";
 
   const rating = Number(hotel.rating || 0).toFixed(1);
 
@@ -279,7 +282,6 @@ export default function HotelDetailsPage() {
             <div className="mt-5 flex flex-wrap items-center gap-x-5 gap-y-3 text-sm text-white/85">
               <span className="flex items-center gap-2">
                 <MapPin size={17} className="text-emerald-300" />
-
                 {destinationName}
               </span>
 
@@ -295,7 +297,6 @@ export default function HotelDetailsPage() {
               {hotel.address && (
                 <span className="hidden items-center gap-2 md:flex">
                   <MapPin size={16} className="text-emerald-300" />
-
                   {hotel.address}
                 </span>
               )}
@@ -483,6 +484,21 @@ export default function HotelDetailsPage() {
                 </div>
               </section>
             )}
+
+            {/* ================= BOTTOM BACK BUTTON ================= */}
+
+            <div className="pt-1">
+              <Link
+                href="/hotels"
+                className="group inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-5 py-3 text-sm font-semibold text-slate-700 shadow-sm transition hover:border-emerald-200 hover:bg-emerald-50 hover:text-emerald-700"
+              >
+                <ArrowLeft
+                  size={17}
+                  className="transition-transform group-hover:-translate-x-1"
+                />
+                Back to Hotels
+              </Link>
+            </div>
           </div>
 
           {/* =================================================

@@ -13,13 +13,57 @@ import {
   Video,
 } from "lucide-react";
 
+/* =========================================================
+   CONTACT DETAILS
+   ========================================================= */
+
+const CONTACT_EMAIL = "manikandan.m20060726@gmail.com";
+const CONTACT_PHONE = "+91 7708985232";
+
+/* =========================================================
+   GMAIL URL
+   ========================================================= */
+
+const GMAIL_URL = `https://mail.google.com/mail/?view=cm&fs=1&to=${encodeURIComponent(
+  CONTACT_EMAIL,
+)}`;
+
+/* =========================================================
+   PHONE URL
+   ========================================================= */
+
+const PHONE_URL = `tel:${CONTACT_PHONE.replace(/\s+/g, "")}`;
+
+/* =========================================================
+   QUICK LINKS
+   ========================================================= */
+
 const quickLinks = [
-  { name: "Home", href: "/" },
-  { name: "Destinations", href: "/destinations" },
-  { name: "Packages", href: "/packages" },
-  { name: "Reviews", href: "/reviews" },
-  { name: "Contact", href: "/contact" },
+  {
+    name: "Home",
+    href: "/",
+  },
+  {
+    name: "Destinations",
+    href: "/destinations",
+  },
+  {
+    name: "Packages",
+    href: "/packages",
+  },
+  {
+    name: "Reviews",
+    href: "/reviews",
+  },
+  {
+    name: "Contact",
+    href: "/contact",
+  },
 ];
+
+/* =========================================================
+   EXPLORE ITEMS
+   ========================================================= */
 
 const exploreItems = [
   {
@@ -39,18 +83,31 @@ const exploreItems = [
   },
 ];
 
+/* =========================================================
+   FOOTER
+   ========================================================= */
+
 export default function Footer() {
   return (
     <footer className="relative overflow-hidden bg-[#071510] text-white">
-      {/* Decorative Background */}
+      {/* ===================================================
+          DECORATIVE BACKGROUND
+          =================================================== */}
+
       <div className="pointer-events-none absolute -right-32 -top-32 h-64 w-64 rounded-full bg-emerald-500/10 blur-3xl" />
 
       <div className="pointer-events-none absolute -bottom-32 -left-32 h-64 w-64 rounded-full bg-teal-500/10 blur-3xl" />
 
-      {/* ================= MAIN FOOTER ================= */}
+      {/* ===================================================
+          MAIN FOOTER
+          =================================================== */}
+
       <div className="relative mx-auto max-w-7xl px-6 py-10 lg:px-8 lg:py-11">
         <div className="grid gap-9 sm:grid-cols-2 lg:grid-cols-[1.35fr_0.8fr_1.1fr_1.1fr]">
-          {/* ================= BRAND ================= */}
+          {/* =================================================
+              BRAND
+              ================================================= */}
+
           <div>
             <Link href="/" className="group inline-flex items-center gap-3">
               {/* Logo */}
@@ -85,7 +142,10 @@ export default function Footer() {
             </div>
           </div>
 
-          {/* ================= QUICK LINKS ================= */}
+          {/* =================================================
+              QUICK LINKS
+              ================================================= */}
+
           <div>
             <h3 className="text-xs font-semibold uppercase tracking-[0.15em] text-white">
               Quick Links
@@ -110,7 +170,10 @@ export default function Footer() {
             </ul>
           </div>
 
-          {/* ================= EXPLORE ================= */}
+          {/* =================================================
+              EXPLORE
+              ================================================= */}
+
           <div>
             <h3 className="text-xs font-semibold uppercase tracking-[0.15em] text-white">
               Explore
@@ -144,14 +207,20 @@ export default function Footer() {
             </div>
           </div>
 
-          {/* ================= CONTACT ================= */}
+          {/* =================================================
+              CONTACT
+              ================================================= */}
+
           <div>
             <h3 className="text-xs font-semibold uppercase tracking-[0.15em] text-white">
               Contact Us
             </h3>
 
             <div className="mt-4 space-y-3">
-              {/* Location */}
+              {/* =================================================
+                  LOCATION
+                  ================================================= */}
+
               <div className="flex items-start gap-2.5">
                 <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-emerald-500/10">
                   <MapPin size={15} className="text-emerald-400" />
@@ -164,10 +233,14 @@ export default function Footer() {
                 </div>
               </div>
 
-              {/* Phone */}
+              {/* =================================================
+                  PHONE
+                  ================================================= */}
+
               <a
-                href="tel:+910000000000"
+                href={PHONE_URL}
                 className="group flex items-start gap-2.5"
+                aria-label={`Call SST Travels at ${CONTACT_PHONE}`}
               >
                 <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-emerald-500/10 transition group-hover:bg-emerald-500/20">
                   <Phone size={15} className="text-emerald-400" />
@@ -177,15 +250,21 @@ export default function Footer() {
                   <p className="text-[10px] text-slate-500">Phone</p>
 
                   <p className="mt-0.5 text-xs text-slate-300 transition group-hover:text-emerald-400">
-                    +91 00000 00000
+                    {CONTACT_PHONE}
                   </p>
                 </div>
               </a>
 
-              {/* Email */}
+              {/* =================================================
+                  EMAIL → GMAIL
+                  ================================================= */}
+
               <a
-                href="mailto:contact@example.com"
+                href={GMAIL_URL}
+                target="_blank"
+                rel="noopener noreferrer"
                 className="group flex items-start gap-2.5"
+                aria-label={`Email SST Travels at ${CONTACT_EMAIL}`}
               >
                 <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-emerald-500/10 transition group-hover:bg-emerald-500/20">
                   <Mail size={15} className="text-emerald-400" />
@@ -195,7 +274,7 @@ export default function Footer() {
                   <p className="text-[10px] text-slate-500">Email</p>
 
                   <p className="mt-0.5 truncate text-xs text-slate-300 transition group-hover:text-emerald-400">
-                    contact@example.com
+                    {CONTACT_EMAIL}
                   </p>
                 </div>
               </a>
@@ -204,7 +283,10 @@ export default function Footer() {
         </div>
       </div>
 
-      {/* ================= BOTTOM BAR ================= */}
+      {/* ===================================================
+          BOTTOM BAR
+          =================================================== */}
+
       <div className="relative border-t border-white/5">
         <div className="mx-auto flex max-w-7xl flex-col gap-2 px-6 py-4 text-[11px] text-slate-500 sm:flex-row sm:items-center sm:justify-between lg:px-8">
           <p>

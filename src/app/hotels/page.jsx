@@ -13,6 +13,7 @@ import {
   Utensils,
   LoaderCircle,
   AlertCircle,
+  ArrowLeft,
   ArrowRight,
   SlidersHorizontal,
   Sparkles,
@@ -26,13 +27,13 @@ import { apiGet } from "@/utils/api";
 
 /* =========================================================
    CONSTANTS
-   ========================================================= */
+========================================================= */
 
 const FALLBACK_IMAGE = "/images/tourism-placeholder.jpg";
 
 /* =========================================================
    HELPERS
-   ========================================================= */
+========================================================= */
 
 function getImageUrl(image) {
   if (!image) return FALLBACK_IMAGE;
@@ -65,7 +66,9 @@ function formatPrice(pricePerNight) {
   if (!min && !max) return "Price unavailable";
 
   if (min && max) {
-    return `₹${min.toLocaleString("en-IN")} - ₹${max.toLocaleString("en-IN")}`;
+    return `₹${min.toLocaleString("en-IN")} - ₹${max.toLocaleString(
+      "en-IN",
+    )}`;
   }
 
   return `From ₹${(min || max).toLocaleString("en-IN")}`;
@@ -73,7 +76,7 @@ function formatPrice(pricePerNight) {
 
 /* =========================================================
    AMENITY ICON
-   ========================================================= */
+========================================================= */
 
 function AmenityIcon({ amenity }) {
   const value = String(amenity || "").toLowerCase();
@@ -99,7 +102,7 @@ function AmenityIcon({ amenity }) {
 
 /* =========================================================
    HOTEL CARD
-   ========================================================= */
+========================================================= */
 
 function HotelCard({ hotel }) {
   const imageUrl = getImageUrl(hotel.coverImage);
@@ -112,6 +115,7 @@ function HotelCard({ hotel }) {
       {/* =====================================================
           IMAGE
       ===================================================== */}
+
       <div className="relative h-64 overflow-hidden bg-slate-200">
         <Image
           src={imageUrl}
@@ -146,6 +150,7 @@ function HotelCard({ hotel }) {
             <div className="min-w-0">
               <div className="mb-1 flex items-center gap-1.5 text-xs font-medium text-white/80">
                 <MapPin size={13} />
+
                 <span className="truncate">
                   {hotel.destination?.name || "India"}
                 </span>
@@ -158,7 +163,12 @@ function HotelCard({ hotel }) {
 
             {/* Rating */}
             <div className="flex shrink-0 items-center gap-1 rounded-xl bg-white px-2.5 py-1.5 text-sm font-bold text-slate-900 shadow-lg">
-              <Star size={14} fill="currentColor" className="text-amber-500" />
+              <Star
+                size={14}
+                fill="currentColor"
+                className="text-amber-500"
+              />
+
               {Number(hotel.rating || 0).toFixed(1)}
             </div>
           </div>
@@ -168,6 +178,7 @@ function HotelCard({ hotel }) {
       {/* =====================================================
           CONTENT
       ===================================================== */}
+
       <div className="p-5">
         <p className="line-clamp-2 min-h-[48px] text-sm leading-6 text-slate-600">
           {hotel.description ||
@@ -183,6 +194,7 @@ function HotelCard({ hotel }) {
                 className="flex items-center gap-1.5 rounded-full bg-emerald-50 px-3 py-1.5 text-xs font-medium text-emerald-700"
               >
                 <AmenityIcon amenity={amenity} />
+
                 <span>{amenity}</span>
               </span>
             ))}
@@ -215,7 +227,7 @@ function HotelCard({ hotel }) {
 
 /* =========================================================
    HOTELS PAGE
-   ========================================================= */
+========================================================= */
 
 export default function HotelsPage() {
   const [hotels, setHotels] = useState([]);
@@ -270,7 +282,9 @@ export default function HotelsPage() {
   const categories = useMemo(() => {
     return [
       "all",
-      ...new Set(hotels.map((hotel) => hotel.category).filter(Boolean)),
+      ...new Set(
+        hotels.map((hotel) => hotel.category).filter(Boolean),
+      ),
     ];
   }, [hotels]);
 
@@ -282,7 +296,9 @@ export default function HotelsPage() {
     return [
       "all",
       ...new Set(
-        hotels.map((hotel) => hotel.destination?.name).filter(Boolean),
+        hotels
+          .map((hotel) => hotel.destination?.name)
+          .filter(Boolean),
       ),
     ];
   }, [hotels]);
@@ -308,12 +324,18 @@ export default function HotelsPage() {
 
       const matchesSearch = searchableText.includes(searchText);
 
-      const matchesCategory = category === "all" || hotel.category === category;
+      const matchesCategory =
+        category === "all" || hotel.category === category;
 
       const matchesDestination =
-        destination === "all" || hotel.destination?.name === destination;
+        destination === "all" ||
+        hotel.destination?.name === destination;
 
-      return matchesSearch && matchesCategory && matchesDestination;
+      return (
+        matchesSearch &&
+        matchesCategory &&
+        matchesDestination
+      );
     });
   }, [hotels, search, category, destination]);
 
@@ -324,9 +346,11 @@ export default function HotelsPage() {
       {/* =====================================================
           HERO
       ===================================================== */}
+
       <section className="relative overflow-hidden bg-[#073b32]">
         {/* Decorative background */}
         <div className="absolute -left-32 -top-32 h-80 w-80 rounded-full bg-emerald-400/10 blur-3xl" />
+
         <div className="absolute -right-20 bottom-0 h-96 w-96 rounded-full bg-emerald-300/10 blur-3xl" />
 
         <div className="relative mx-auto max-w-7xl px-5 pb-20 pt-16 sm:px-6 sm:pb-24 sm:pt-20 lg:px-8">
@@ -339,28 +363,39 @@ export default function HotelsPage() {
 
             <h1 className="max-w-3xl text-4xl font-extrabold leading-tight tracking-tight text-white sm:text-5xl lg:text-6xl">
               Find Your Perfect
-              <span className="block text-emerald-300">Stay in India</span>
+              <span className="block text-emerald-300">
+                Stay in India
+              </span>
             </h1>
 
             <p className="mt-6 max-w-2xl text-base leading-7 text-emerald-50/80 sm:text-lg">
-              Discover comfortable hotels, resorts, hostels, and homestays in
-              beautiful destinations across India.
+              Discover comfortable hotels, resorts, hostels, and
+              homestays in beautiful destinations across India.
             </p>
 
             {/* Hero mini stats */}
             <div className="mt-8 flex flex-wrap gap-3">
               <div className="flex items-center gap-2 rounded-full border border-white/10 bg-white/10 px-4 py-2.5 text-sm text-white backdrop-blur">
-                <Building2 size={16} className="text-emerald-300" />
+                <Building2
+                  size={16}
+                  className="text-emerald-300"
+                />
                 Comfortable stays
               </div>
 
               <div className="flex items-center gap-2 rounded-full border border-white/10 bg-white/10 px-4 py-2.5 text-sm text-white backdrop-blur">
-                <Star size={16} className="fill-current text-amber-300" />
+                <Star
+                  size={16}
+                  className="fill-current text-amber-300"
+                />
                 Guest rated
               </div>
 
               <div className="flex items-center gap-2 rounded-full border border-white/10 bg-white/10 px-4 py-2.5 text-sm text-white backdrop-blur">
-                <ShieldCheck size={16} className="text-emerald-300" />
+                <ShieldCheck
+                  size={16}
+                  className="text-emerald-300"
+                />
                 Trusted travel
               </div>
             </div>
@@ -374,10 +409,27 @@ export default function HotelsPage() {
       {/* =====================================================
           MAIN
       ===================================================== */}
+
       <main className="mx-auto max-w-7xl px-5 py-10 sm:px-6 lg:px-8">
+        {/* ================= BACK TO HOME ================= */}
+
+        <div className="mb-8">
+          <Link
+            href="/"
+            className="group inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-5 py-3 text-sm font-semibold text-slate-700 shadow-sm transition hover:border-emerald-200 hover:bg-emerald-50 hover:text-emerald-700"
+          >
+            <ArrowLeft
+              size={17}
+              className="transition-transform group-hover:-translate-x-1"
+            />
+            Back to Home
+          </Link>
+        </div>
+
         {/* ===================================================
             FILTER BOX
         =================================================== */}
+
         <section className="-mt-2 mb-12 rounded-[28px] border border-slate-200 bg-white p-5 shadow-[0_15px_45px_rgba(15,23,42,0.08)] sm:p-6">
           <div className="mb-5 flex items-center gap-3">
             <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-50 text-emerald-700">
@@ -420,7 +472,9 @@ export default function HotelsPage() {
             >
               {categories.map((item) => (
                 <option key={item} value={item}>
-                  {item === "all" ? "All Categories" : formatCategory(item)}
+                  {item === "all"
+                    ? "All Categories"
+                    : formatCategory(item)}
                 </option>
               ))}
             </select>
@@ -433,7 +487,9 @@ export default function HotelsPage() {
             >
               {destinations.map((item) => (
                 <option key={item} value={item}>
-                  {item === "all" ? "All Destinations" : item}
+                  {item === "all"
+                    ? "All Destinations"
+                    : item}
                 </option>
               ))}
             </select>
@@ -443,6 +499,7 @@ export default function HotelsPage() {
         {/* ===================================================
             SECTION HEADER
         =================================================== */}
+
         <div className="mb-7 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
           <div>
             <div className="mb-2 flex items-center gap-2 text-sm font-semibold text-emerald-700">
@@ -470,6 +527,7 @@ export default function HotelsPage() {
         {/* ===================================================
             LOADING
         =================================================== */}
+
         {loading && (
           <div className="flex min-h-[360px] flex-col items-center justify-center rounded-[28px] border border-slate-200 bg-white">
             <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-emerald-50">
@@ -483,109 +541,148 @@ export default function HotelsPage() {
               Finding comfortable stays...
             </p>
 
-            <p className="mt-1 text-xs text-slate-400">Please wait a moment</p>
+            <p className="mt-1 text-xs text-slate-400">
+              Please wait a moment
+            </p>
           </div>
         )}
 
         {/* ===================================================
             ERROR
         =================================================== */}
+
         {!loading && error && (
           <div className="flex min-h-[360px] flex-col items-center justify-center rounded-[28px] border border-red-100 bg-white px-6 text-center">
             <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-red-50">
-              <AlertCircle size={28} className="text-red-500" />
+              <AlertCircle
+                size={28}
+                className="text-red-500"
+              />
             </div>
 
             <h3 className="mt-4 text-lg font-bold text-slate-900">
               Unable to load hotels
             </h3>
 
-            <p className="mt-2 max-w-md text-sm text-slate-500">{error}</p>
+            <p className="mt-2 max-w-md text-sm text-slate-500">
+              {error}
+            </p>
           </div>
         )}
 
         {/* ===================================================
             EMPTY
         =================================================== */}
-        {!loading && !error && filteredHotels.length === 0 && (
-          <div className="rounded-[28px] border border-dashed border-slate-300 bg-white px-6 py-20 text-center">
-            <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl bg-emerald-50">
-              <BedDouble size={32} className="text-emerald-600" />
+
+        {!loading &&
+          !error &&
+          filteredHotels.length === 0 && (
+            <div className="rounded-[28px] border border-dashed border-slate-300 bg-white px-6 py-20 text-center">
+              <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl bg-emerald-50">
+                <BedDouble
+                  size={32}
+                  className="text-emerald-600"
+                />
+              </div>
+
+              <h3 className="mt-5 text-xl font-bold text-slate-900">
+                No hotels found
+              </h3>
+
+              <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-slate-500">
+                We couldn't find any stays matching your current
+                search or filters. Try changing your search options.
+              </p>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setSearch("");
+                  setCategory("all");
+                  setDestination("all");
+                }}
+                className="mt-6 rounded-xl bg-emerald-700 px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-emerald-800"
+              >
+                Clear Filters
+              </button>
             </div>
-
-            <h3 className="mt-5 text-xl font-bold text-slate-900">
-              No hotels found
-            </h3>
-
-            <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-slate-500">
-              We couldn't find any stays matching your current search or
-              filters. Try changing your search options.
-            </p>
-
-            <button
-              type="button"
-              onClick={() => {
-                setSearch("");
-                setCategory("all");
-                setDestination("all");
-              }}
-              className="mt-6 rounded-xl bg-emerald-700 px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-emerald-800"
-            >
-              Clear Filters
-            </button>
-          </div>
-        )}
+          )}
 
         {/* ===================================================
             HOTEL GRID
         =================================================== */}
-        {!loading && !error && filteredHotels.length > 0 && (
-          <div className="grid gap-6 sm:grid-cols-2 xl:grid-cols-3">
-            {filteredHotels.map((hotel) => (
-              <HotelCard key={hotel._id} hotel={hotel} />
-            ))}
-          </div>
-        )}
+
+        {!loading &&
+          !error &&
+          filteredHotels.length > 0 && (
+            <div className="grid gap-6 sm:grid-cols-2 xl:grid-cols-3">
+              {filteredHotels.map((hotel) => (
+                <HotelCard
+                  key={hotel._id}
+                  hotel={hotel}
+                />
+              ))}
+            </div>
+          )}
 
         {/* ===================================================
             BOTTOM INFO
         =================================================== */}
-        {!loading && !error && filteredHotels.length > 0 && (
-          <section className="mt-16 overflow-hidden rounded-[30px] bg-[#073b32]">
-            <div className="relative px-6 py-10 sm:px-10 sm:py-12">
-              <div className="absolute -right-20 -top-32 h-72 w-72 rounded-full bg-emerald-400/10 blur-3xl" />
 
-              <div className="relative flex flex-col gap-8 lg:flex-row lg:items-center lg:justify-between">
-                <div className="max-w-2xl">
-                  <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-emerald-300">
-                    <Sparkles size={16} />
-                    Travel with confidence
+        {!loading &&
+          !error &&
+          filteredHotels.length > 0 && (
+            <section className="mt-16 overflow-hidden rounded-[30px] bg-[#073b32]">
+              <div className="relative px-6 py-10 sm:px-10 sm:py-12">
+                <div className="absolute -right-20 -top-32 h-72 w-72 rounded-full bg-emerald-400/10 blur-3xl" />
+
+                <div className="relative flex flex-col gap-8 lg:flex-row lg:items-center lg:justify-between">
+                  <div className="max-w-2xl">
+                    <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-emerald-300">
+                      <Sparkles size={16} />
+                      Travel with confidence
+                    </div>
+
+                    <h3 className="text-2xl font-extrabold text-white sm:text-3xl">
+                      Your comfort matters on every journey.
+                    </h3>
+
+                    <p className="mt-3 text-sm leading-6 text-emerald-50/70">
+                      Choose a stay that fits your journey and enjoy a
+                      comfortable travel experience with SST Travels.
+                    </p>
                   </div>
 
-                  <h3 className="text-2xl font-extrabold text-white sm:text-3xl">
-                    Your comfort matters on every journey.
-                  </h3>
+                  <Link
+                    href="/contact"
+                    className="group inline-flex shrink-0 items-center justify-center gap-2 rounded-xl bg-white px-5 py-3 text-sm font-bold text-[#073b32] transition hover:bg-emerald-50"
+                  >
+                    Plan Your Trip
 
-                  <p className="mt-3 text-sm leading-6 text-emerald-50/70">
-                    Choose a stay that fits your journey and enjoy a comfortable
-                    travel experience with SST Travels.
-                  </p>
+                    <ArrowRight
+                      size={17}
+                      className="transition-transform group-hover:translate-x-1"
+                    />
+                  </Link>
                 </div>
-
-                <Link
-                  href="/contact"
-                  className="group inline-flex shrink-0 items-center justify-center gap-2 rounded-xl bg-white px-5 py-3 text-sm font-bold text-[#073b32] transition hover:bg-emerald-50"
-                >
-                  Plan Your Trip
-                  <ArrowRight
-                    size={17}
-                    className="transition-transform group-hover:translate-x-1"
-                  />
-                </Link>
               </div>
-            </div>
-          </section>
-        )}
+            </section>
+          )}
+
+        {/* ================= BOTTOM BACK TO HOME ================= */}
+
+        <div className="mt-10">
+          <Link
+            href="/"
+            className="group inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-5 py-3 text-sm font-semibold text-slate-700 shadow-sm transition hover:border-emerald-200 hover:bg-emerald-50 hover:text-emerald-700"
+          >
+            <ArrowLeft
+              size={17}
+              className="transition-transform group-hover:-translate-x-1"
+            />
+            Back to Home
+          </Link>
+        </div>
       </main>
 
       <Footer />

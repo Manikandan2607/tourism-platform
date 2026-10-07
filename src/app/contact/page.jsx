@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 
@@ -84,7 +84,7 @@ function findItem(items, value, nameGetter) {
    CONTACT PAGE
 ========================================================= */
 
-function ContactPageContent() {
+export default function ContactPage() {
   const searchParams = useSearchParams();
 
   const [destinations, setDestinations] = useState([]);
@@ -440,7 +440,7 @@ function ContactPageContent() {
                   {/* EMAIL */}
 
                   <a
-                    href="mailto:ssttravels@gmail.com"
+                    href="https://mail.google.com/mail/?view=cm&fs=1&to=manikandan.m20060726@gmail.com"
                     className="group flex items-start gap-4 rounded-2xl border border-slate-100 bg-slate-50 p-4 transition hover:-translate-y-0.5 hover:border-emerald-200 hover:bg-emerald-50/50"
                   >
                     <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-emerald-100 text-emerald-700 transition group-hover:bg-emerald-600 group-hover:text-white">
@@ -451,7 +451,7 @@ function ContactPageContent() {
                       <h3 className="font-semibold text-slate-900">Email</h3>
 
                       <p className="mt-1 break-all text-sm text-slate-500">
-                        ssttravels@gmail.com
+                        manikandan.m20060726@gmail.com
                       </p>
                     </div>
                   </a>
@@ -459,7 +459,7 @@ function ContactPageContent() {
                   {/* PHONE */}
 
                   <a
-                    href="tel:+919876543210"
+                    href="tel:+917708985232"
                     className="group flex items-start gap-4 rounded-2xl border border-slate-100 bg-slate-50 p-4 transition hover:-translate-y-0.5 hover:border-emerald-200 hover:bg-emerald-50/50"
                   >
                     <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-emerald-100 text-emerald-700 transition group-hover:bg-emerald-600 group-hover:text-white">
@@ -470,7 +470,7 @@ function ContactPageContent() {
                       <h3 className="font-semibold text-slate-900">Phone</h3>
 
                       <p className="mt-1 text-sm text-slate-500">
-                        +91 98765 43210
+                        +91 7708985232
                       </p>
                     </div>
                   </a>
@@ -865,7 +865,7 @@ function ContactPageContent() {
               </div>
 
               <a
-                href="mailto:ssttravels@gmail.com"
+                href="https://mail.google.com/mail/?view=cm&fs=1&to=manikandan.m20060726@gmail.com"
                 className="inline-flex shrink-0 items-center gap-2 rounded-xl bg-white px-5 py-3.5 text-sm font-bold text-[#062f2b] transition hover:-translate-y-0.5 hover:bg-emerald-50"
               >
                 <Mail size={18} />
@@ -878,13 +878,5 @@ function ContactPageContent() {
 
       <Footer />
     </>
-  );
-}
-
-export default function ContactPage() {
-  return (
-    <Suspense fallback={null}>
-      <ContactPageContent />
-    </Suspense>
   );
 }
