@@ -96,18 +96,8 @@ export default function Footer() {
 
       {/* Main footer */}
       <div className="relative mx-auto w-full max-w-7xl px-5 py-9 sm:px-6 sm:py-10 lg:px-8 lg:py-11">
-        <div
-          className="
-            grid
-            grid-cols-1
-            gap-8
-            sm:grid-cols-2
-            lg:grid-cols-[1.4fr_0.75fr_1.1fr_1.05fr]
-            lg:gap-9
-            xl:gap-12
-          "
-        >
-          {/* ================= BRAND ================= */}
+        <div className="grid grid-cols-1 gap-8 sm:grid-cols-2 lg:grid-cols-[1.4fr_0.75fr_1.1fr_1.05fr] lg:gap-9 xl:gap-12">
+          {/* BRAND */}
           <div className="min-w-0">
             <Link
               href="/"
@@ -118,18 +108,7 @@ export default function Footer() {
                 src="/images/sst-travels-logo.png"
                 alt="SST Travels"
                 draggable="false"
-                className="
-                  block
-                  h-auto
-                  w-[110px]
-                  object-contain
-                  object-left
-                  transition-transform
-                  duration-300
-                  group-hover:scale-[1.02]
-                  sm:w-[115px]
-                  lg:w-[120px]
-                "
+                className="block h-auto w-[110px] object-contain object-left transition-transform duration-300 group-hover:scale-[1.02] sm:w-[115px] lg:w-[120px]"
               />
             </Link>
 
@@ -140,10 +119,7 @@ export default function Footer() {
 
             {/* Trust badge */}
             <div className="mt-4 inline-flex max-w-full items-center gap-2 rounded-full border border-emerald-500/15 bg-emerald-500/5 px-3 py-1.5">
-              <ShieldCheck
-                size={13}
-                className="shrink-0 text-emerald-400"
-              />
+              <ShieldCheck size={13} className="shrink-0 text-emerald-400" />
 
               <span className="text-[10px] font-medium text-slate-300 sm:text-[11px]">
                 Travel with comfort &amp; confidence
@@ -151,7 +127,7 @@ export default function Footer() {
             </div>
           </div>
 
-          {/* ================= QUICK LINKS ================= */}
+          {/* QUICK LINKS */}
           <div className="min-w-0">
             <h3 className="text-[10px] font-semibold uppercase tracking-[0.15em] text-white">
               Quick Links
@@ -162,31 +138,13 @@ export default function Footer() {
                 <li key={link.href}>
                   <Link
                     href={link.href}
-                    className="
-                      group
-                      inline-flex
-                      items-center
-                      text-[11px]
-                      text-slate-400
-                      transition
-                      duration-200
-                      hover:text-emerald-400
-                      sm:text-xs
-                    "
+                    className="group inline-flex items-center text-[11px] text-slate-400 transition duration-200 hover:text-emerald-400 sm:text-xs"
                   >
                     <span>{link.name}</span>
 
                     <ArrowUpRight
                       size={11}
-                      className="
-                        ml-1
-                        opacity-0
-                        transition
-                        duration-200
-                        group-hover:translate-x-0.5
-                        group-hover:-translate-y-0.5
-                        group-hover:opacity-100
-                      "
+                      className="ml-1 opacity-0 transition duration-200 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 group-hover:opacity-100"
                     />
                   </Link>
                 </li>
@@ -194,7 +152,7 @@ export default function Footer() {
             </ul>
           </div>
 
-          {/* ================= EXPLORE ================= */}
+          {/* EXPLORE */}
           <div className="min-w-0">
             <h3 className="text-[10px] font-semibold uppercase tracking-[0.15em] text-white">
               Explore
@@ -210,10 +168,7 @@ export default function Footer() {
                     className="group flex items-start gap-2.5"
                   >
                     <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-emerald-500/10 transition duration-300 group-hover:bg-emerald-500/20">
-                      <Icon
-                        size={14}
-                        className="text-emerald-400"
-                      />
+                      <Icon size={14} className="text-emerald-400" />
                     </div>
 
                     <div className="min-w-0">
@@ -231,7 +186,7 @@ export default function Footer() {
             </div>
           </div>
 
-          {/* ================= CONTACT ================= */}
+          {/* CONTACT */}
           <div className="min-w-0">
             <h3 className="text-[10px] font-semibold uppercase tracking-[0.15em] text-white">
               Contact Us
@@ -241,16 +196,11 @@ export default function Footer() {
               {/* Location */}
               <div className="flex items-start gap-2.5">
                 <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-emerald-500/10">
-                  <MapPin
-                    size={14}
-                    className="text-emerald-400"
-                  />
+                  <MapPin size={14} className="text-emerald-400" />
                 </div>
 
                 <div>
-                  <p className="text-[9px] text-slate-500">
-                    Location
-                  </p>
+                  <p className="text-[9px] text-slate-500">Location</p>
 
                   <p className="mt-0.5 text-[11px] text-slate-300 sm:text-xs">
                     India
@@ -265,16 +215,11 @@ export default function Footer() {
                 aria-label={`Call SST Travels at ${CONTACT_PHONE}`}
               >
                 <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-emerald-500/10 transition group-hover:bg-emerald-500/20">
-                  <Phone
-                    size={14}
-                    className="text-emerald-400"
-                  />
+                  <Phone size={14} className="text-emerald-400" />
                 </div>
 
                 <div className="min-w-0">
-                  <p className="text-[9px] text-slate-500">
-                    Phone
-                  </p>
+                  <p className="text-[9px] text-slate-500">Phone</p>
 
                   <p className="mt-0.5 text-[11px] text-slate-300 transition group-hover:text-emerald-400 sm:text-xs">
                     {CONTACT_PHONE}
@@ -291,16 +236,11 @@ export default function Footer() {
                 aria-label={`Email SST Travels at ${CONTACT_EMAIL}`}
               >
                 <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-emerald-500/10 transition group-hover:bg-emerald-500/20">
-                  <Mail
-                    size={14}
-                    className="text-emerald-400"
-                  />
+                  <Mail size={14} className="text-emerald-400" />
                 </div>
 
                 <div className="min-w-0">
-                  <p className="text-[9px] text-slate-500">
-                    Email
-                  </p>
+                  <p className="text-[9px] text-slate-500">Email</p>
 
                   <p className="mt-0.5 truncate text-[11px] text-slate-300 transition group-hover:text-emerald-400 sm:text-xs">
                     {CONTACT_EMAIL}
@@ -314,38 +254,15 @@ export default function Footer() {
 
       {/* Bottom bar */}
       <div className="relative border-t border-white/5">
-        <div
-          className="
-            mx-auto
-            flex
-            max-w-7xl
-            flex-col
-            gap-2.5
-            px-5
-            py-3.5
-            text-[10px]
-            text-slate-500
-            sm:flex-row
-            sm:items-center
-            sm:justify-between
-            sm:px-6
-            sm:text-[11px]
-            lg:px-8
-          "
-        >
+        <div className="mx-auto flex max-w-7xl flex-col gap-2.5 px-5 py-3.5 text-[10px] text-slate-500 sm:flex-row sm:items-center sm:justify-between sm:px-6 sm:text-[11px] lg:px-8">
           <p>
             © {new Date().getFullYear()}{" "}
-            <span className="font-medium text-slate-400">
-              SST Travels
-            </span>
-            . All rights reserved.
+            <span className="font-medium text-slate-400">SST Travels</span>.
+            All rights reserved.
           </p>
 
           <div className="flex items-center gap-1.5">
-            <Globe2
-              size={12}
-              className="text-emerald-500"
-            />
+            <Globe2 size={12} className="text-emerald-500" />
 
             <span>Explore more. Travel better.</span>
           </div>

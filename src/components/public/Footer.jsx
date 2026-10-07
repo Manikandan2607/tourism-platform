@@ -43,18 +43,8 @@ export default function Footer() {
 
       {/* Main footer */}
       <div className="relative z-10 mx-auto w-full max-w-[1380px] px-5 py-9 sm:px-6 sm:py-10 lg:px-8 lg:py-11">
-        <div
-          className="
-            grid
-            grid-cols-1
-            gap-8
-            sm:grid-cols-2
-            lg:grid-cols-[1.45fr_0.8fr_0.8fr_1.15fr]
-            lg:gap-10
-            xl:gap-14
-          "
-        >
-          {/* ================= BRAND ================= */}
+        <div className="grid grid-cols-1 gap-8 sm:grid-cols-2 lg:grid-cols-[1.45fr_0.8fr_0.8fr_1.15fr] lg:gap-10 xl:gap-14">
+          {/* BRAND */}
           <div className="min-w-0">
             <Link
               href="/"
@@ -65,16 +55,7 @@ export default function Footer() {
                 src="/images/sst-travels-logo.png"
                 alt="SST Travels"
                 draggable="false"
-                className="
-                  block
-                  h-auto
-                  w-[108px]
-                  max-w-full
-                  object-contain
-                  object-left
-                  sm:w-[115px]
-                  lg:w-[120px]
-                "
+                className="block h-auto w-[108px] max-w-full object-contain object-left sm:w-[115px] lg:w-[120px]"
               />
             </Link>
 
@@ -88,46 +69,19 @@ export default function Footer() {
               href={GMAIL_URL}
               target="_blank"
               rel="noopener noreferrer"
-              className="
-                mt-4
-                flex
-                max-w-full
-                items-center
-                gap-2.5
-                text-[11px]
-                font-medium
-                text-white/70
-                transition-colors
-                duration-300
-                hover:text-[#b8f0df]
-                sm:text-xs
-              "
+              className="mt-4 flex max-w-full items-center gap-2.5 text-[11px] font-medium text-white/70 transition-colors duration-300 hover:text-[#b8f0df] sm:text-xs"
             >
               <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-white/10">
                 <Mail size={14} />
               </span>
 
-              <span className="min-w-0 break-all">
-                {CONTACT_EMAIL}
-              </span>
+              <span className="min-w-0 break-all">{CONTACT_EMAIL}</span>
             </a>
 
             {/* Phone */}
             <a
               href={PHONE_URL}
-              className="
-                mt-2.5
-                flex
-                items-center
-                gap-2.5
-                text-[11px]
-                font-medium
-                text-white/70
-                transition-colors
-                duration-300
-                hover:text-[#b8f0df]
-                sm:text-xs
-              "
+              className="mt-2.5 flex items-center gap-2.5 text-[11px] font-medium text-white/70 transition-colors duration-300 hover:text-[#b8f0df] sm:text-xs"
             >
               <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-white/10">
                 <PhoneCall size={14} />
@@ -137,7 +91,7 @@ export default function Footer() {
             </a>
           </div>
 
-          {/* ================= EXPLORE ================= */}
+          {/* EXPLORE */}
           <div className="min-w-0">
             <h3 className="text-[10px] font-extrabold uppercase tracking-[0.16em] text-[#a9ead7]">
               Explore
@@ -148,16 +102,7 @@ export default function Footer() {
                 <Link
                   key={link.href}
                   href={link.href}
-                  className="
-                    w-fit
-                    text-[11px]
-                    text-white/60
-                    transition-all
-                    duration-300
-                    hover:translate-x-1
-                    hover:text-white
-                    sm:text-xs
-                  "
+                  className="w-fit text-[11px] text-white/60 transition-all duration-300 hover:translate-x-1 hover:text-white sm:text-xs"
                 >
                   {link.label}
                 </Link>
@@ -165,7 +110,7 @@ export default function Footer() {
             </div>
           </div>
 
-          {/* ================= COMPANY ================= */}
+          {/* COMPANY */}
           <div className="min-w-0">
             <h3 className="text-[10px] font-extrabold uppercase tracking-[0.16em] text-[#a9ead7]">
               Company
@@ -176,16 +121,7 @@ export default function Footer() {
                 <Link
                   key={link.href}
                   href={link.href}
-                  className="
-                    w-fit
-                    text-[11px]
-                    text-white/60
-                    transition-all
-                    duration-300
-                    hover:translate-x-1
-                    hover:text-white
-                    sm:text-xs
-                  "
+                  className="w-fit text-[11px] text-white/60 transition-all duration-300 hover:translate-x-1 hover:text-white sm:text-xs"
                 >
                   {link.label}
                 </Link>
@@ -193,7 +129,7 @@ export default function Footer() {
             </div>
           </div>
 
-          {/* ================= CTA ================= */}
+          {/* CTA */}
           <div className="min-w-0">
             <div className="flex items-center gap-2 text-[#b8f0df]">
               <MapPin size={14} />
@@ -215,25 +151,7 @@ export default function Footer() {
 
             <Link
               href="/contact"
-              className="
-                mt-3
-                inline-flex
-                items-center
-                gap-2
-                rounded-full
-                bg-white
-                px-4
-                py-2
-                text-[11px]
-                font-bold
-                text-[#075847]
-                shadow-[0_8px_20px_rgba(0,0,0,0.10)]
-                transition-all
-                duration-300
-                hover:-translate-y-0.5
-                hover:bg-[#effff9]
-                sm:text-xs
-              "
+              className="mt-3 inline-flex items-center gap-2 rounded-full bg-white px-4 py-2 text-[11px] font-bold text-[#075847] shadow-[0_8px_20px_rgba(0,0,0,0.10)] transition-all duration-300 hover:-translate-y-0.5 hover:bg-[#effff9] sm:text-xs"
             >
               <PhoneCall size={13} />
               Contact Us
