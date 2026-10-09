@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import {
   LayoutDashboard,
   MapPin,
@@ -13,7 +13,12 @@ import {
   MessageSquare,
   X,
   ChevronRight,
+  LogOut,
 } from "lucide-react";
+
+/* =========================================================
+   MENU ITEMS
+========================================================= */
 
 const menuItems = [
   {
@@ -63,11 +68,70 @@ const menuItems = [
   },
 ];
 
+/* =========================================================
+   SIDEBAR
+========================================================= */
+
 export default function AdminSidebar({
   sidebarOpen,
   setSidebarOpen,
 }) {
   const pathname = usePathname();
+  const router = useRouter();
+
+  /* =======================================================
+     LOGOUT
+  ======================================================= */
+
+  function handleLogout() {
+    try {
+      /*
+       * Remove all possible client-side admin token keys.
+       * authToken is the main token used by this project.
+       */
+      const tokenKeys = [
+        "authToken",
+        "adminToken",
+        "token",
+        "accessToken",
+        "jwt",
+      ];
+
+      tokenKeys.forEach((key) => {
+        sessionStorage.removeItem(key);
+        localStorage.removeItem(key);
+      });
+
+      /*
+       * Remove common cookie-based token names too.
+       * This only works for cookies that are not HttpOnly.
+       */
+      const cookieNames = [
+        "token",
+        "adminToken",
+        "accessToken",
+        "jwt",
+        "authToken",
+      ];
+
+      cookieNames.forEach((name) => {
+        document.cookie = `${name}=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/;`;
+      });
+    } catch (error) {
+      console.error("Logout cleanup failed:", error);
+    }
+
+    /*
+     * Close mobile sidebar.
+     */
+    setSidebarOpen?.(false);
+
+    /*
+     * Send admin back to login.
+     */
+    router.replace("/admin/login");
+    router.refresh();
+  }
 
   return (
     <aside
@@ -77,7 +141,7 @@ export default function AdminSidebar({
         left-0
         z-50
         flex
-        w-[242px]
+        ~
         flex-col
         overflow-hidden
         bg-[#063f32]
@@ -94,41 +158,102 @@ export default function AdminSidebar({
       `}
     >
       {/* =================================================
-          LOGO
+          LOGO HEADER
       ================================================== */}
 
-      <div className="flex h-[76px] shrink-0 items-center justify-between border-b border-white/10 px-4">
+      <div
+        className="
+          flex
+          h-[110px]
+          shrink-0
+          items-center
+          justify-center
+          border-b
+          border-white/10
+          px-4
+        "
+      >
         <Link
           href="/admin/dashboard"
-          className="flex items-center gap-3"
+          aria-label="SST Travels Dashboard"
           onClick={() => setSidebarOpen?.(false)}
+          className="
+            relative
+            flex
+            h-[92px]
+            w-[150px]
+            items-center
+            justify-center
+            overflow-hidden
+            rounded-xl
+          "
         >
-          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-white text-[#063f32]">
-            <MapPin size={21} strokeWidth={2.2} />
-          </div>
+          {/* Original logo */}
+          <img
+            src="/images/sst-travels-logo.png"
+            alt="SST Travels"
+            draggable="false"
+            className="
+              absolute
+              left-1/2
+              top-1/2
+              block
+              h-auto
+              w-[142px]
+              -translate-x-1/2
+              -translate-y-1/2
+              object-contain
+            "
+          />
 
-          <div className="min-w-0">
-            <p className="truncate text-sm font-bold text-white">
-              SST Travels
-            </p>
+          {/* =================================================
+              WHITE SST TEXT OVERLAY
 
-            <p className="mt-0.5 text-[10px] font-medium text-emerald-100/70">
-              Tourism Management
-            </p>
-          </div>
+              The original logo contains green SST lettering.
+              This second copy only covers the lettering area
+              and changes that area to white.
+          ================================================== */}
+
+          <img
+            src="/images/sst-travels-logo.png"
+            alt=""
+            aria-hidden="true"
+            draggable="false"
+            className="
+              pointer-events-none
+              absolute
+              left-1/2
+              top-1/2
+              block
+              h-auto
+              w-[142px]
+              -translate-x-1/2
+              -translate-y-1/2
+              object-contain
+              brightness-0
+              invert
+            "
+            style={{
+              clipPath: "inset(64% 0 17% 0)",
+            }}
+          />
         </Link>
 
+        {/* Mobile close button */}
         <button
           type="button"
           onClick={() => setSidebarOpen?.(false)}
           className="
+            absolute
+            right-3
+            top-3
             flex
             h-8
             w-8
             items-center
             justify-center
             rounded-lg
-            text-white/70
+            text-white/60
             transition
             hover:bg-white/10
             hover:text-white
@@ -144,8 +269,29 @@ export default function AdminSidebar({
           NAVIGATION
       ================================================== */}
 
-      <div className="min-h-0 flex-1 overflow-y-auto px-3 py-5 scrollbar-thin scrollbar-thumb-white/20 scrollbar-track-transparent">
-        <p className="mb-3 px-2 text-[10px] font-bold uppercase tracking-[0.18em] text-emerald-100/40">
+      <div
+        className="
+          min-h-0
+          flex-1
+          overflow-y-auto
+          px-3
+          py-5
+          scrollbar-thin
+          scrollbar-thumb-white/20
+          scrollbar-track-transparent
+        "
+      >
+        <p
+          className="
+            mb-3
+            px-2
+            text-[10px]
+            font-bold
+            uppercase
+            tracking-[0.18em]
+            text-emerald-100/40
+          "
+        >
           Main Menu
         </p>
 
@@ -177,11 +323,11 @@ export default function AdminSidebar({
                   ${
                     isActive
                       ? "bg-emerald-500 text-white shadow-sm"
-                      : "text-white/70 hover:bg-white/8 hover:text-white"
+                      : "text-white/70 hover:bg-white/10 hover:text-white"
                   }
                 `}
               >
-                {/* ICON */}
+                {/* Icon */}
 
                 <span
                   className={`
@@ -205,13 +351,21 @@ export default function AdminSidebar({
                   />
                 </span>
 
-                {/* LABEL */}
+                {/* Label */}
 
-                <span className="min-w-0 flex-1 truncate text-sm font-medium">
+                <span
+                  className="
+                    min-w-0
+                    flex-1
+                    truncate
+                    text-sm
+                    font-medium
+                  "
+                >
                   {item.label}
                 </span>
 
-                {/* ARROW */}
+                {/* Arrow */}
 
                 <ChevronRight
                   size={16}
@@ -232,34 +386,75 @@ export default function AdminSidebar({
       </div>
 
       {/* =================================================
-          SIDEBAR FOOTER
+          LOGOUT
       ================================================== */}
 
-      <div className="shrink-0 p-3">
-        <div className="rounded-2xl border border-white/10 bg-white/5 p-3">
-          <div className="flex items-center gap-3">
-            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-emerald-400/10">
-              <Map
-                size={17}
-                className="text-emerald-300"
-              />
-            </div>
+      <div className="shrink-0 border-t border-white/10 p-3">
+        <button
+          type="button"
+          onClick={handleLogout}
+          className="
+            group
+            flex
+            h-12
+            w-full
+            items-center
+            gap-3
+            rounded-xl
+            border
+            border-red-400/20
+            bg-red-500/10
+            px-3
+            text-red-300
+            transition-all
+            duration-200
+            hover:border-red-400/40
+            hover:bg-red-500
+            hover:text-white
+            active:scale-[0.98]
+          "
+        >
+          {/* Logout icon */}
 
-            <div className="min-w-0">
-              <p className="truncate text-xs font-semibold text-white">
-                Tourism Dashboard
-              </p>
+          <span
+            className="
+              flex
+              h-8
+              w-8
+              shrink-0
+              items-center
+              justify-center
+              rounded-lg
+              bg-red-500/15
+              transition
+              group-hover:bg-white/10
+            "
+          >
+            <LogOut
+              size={17}
+              strokeWidth={2}
+            />
+          </span>
 
-              <p className="truncate text-[10px] text-white/45">
-                Manage your travel content
-              </p>
-            </div>
-          </div>
+          {/* Text */}
 
-          <div className="mt-3 h-1 overflow-hidden rounded-full bg-white/10">
-            <div className="h-full w-3/4 rounded-full bg-emerald-400" />
-          </div>
-        </div>
+          <span className="flex-1 text-left text-sm font-semibold">
+            Logout
+          </span>
+
+          {/* Arrow */}
+
+          <ChevronRight
+            size={16}
+            className="
+              shrink-0
+              text-red-300/50
+              transition
+              group-hover:translate-x-0.5
+              group-hover:text-white
+            "
+          />
+        </button>
       </div>
     </aside>
   );
